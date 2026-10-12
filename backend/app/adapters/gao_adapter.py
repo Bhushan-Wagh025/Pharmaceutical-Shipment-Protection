@@ -106,12 +106,19 @@ class GAOBLEGatewayAdapter(BaseGatewayAdapter):
                 else:
                     self._is_connected = False
                     self._last_error = f"Gateway responded with HTTP {response.status_code}: {response.text[:150]}"
+                    if response.status_code in (301, 302, 307, 308) or "_aistudio" in response.text or "accounts.google.com" in response.text:
+                        troubleshooting = (
+                            "Gateway endpoint returned an authentication redirect (Google Cloud IAP / AI Studio authentication required). "
+                            "Please provide a Bearer Token or API Key in Gateway Settings, or configure the Cloud Run service to allow unauthenticated invocations."
+                        )
+                    else:
+                        troubleshooting = "Verify the authentication method and API key credentials in Gateway Settings."
                     return {
                         "success": False,
                         "latency_ms": latency_ms,
                         "details": f"HTTP {response.status_code} received from gateway.",
                         "error": self._last_error,
-                        "troubleshooting": "Verify the authentication method and API key credentials in Gateway Settings."
+                        "troubleshooting": troubleshooting
                     }
         except httpx.ConnectTimeout:
             latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
@@ -192,11 +199,22 @@ class GAOBLEGatewayAdapter(BaseGatewayAdapter):
                     payload = res.json()
                     self._last_communication = datetime.utcnow()
                     readings = []
-                    raw_items = payload if isinstance(payload, list) else [payload]
+                    if isinstance(payload, dict):
+                        raw_items = payload.get("data") or payload.get("telemetry") or payload.get("readings") or payload.get("results") or [payload]
+                    elif isinstance(payload, list):
+                        raw_items = payload
+                    else:
+                        raw_items = []
+
                     for r in raw_items:
+                        if not isinstance(r, dict):
+                            continue
+                        temp_val = r.get("temperature") if r.get("temperature") is not None else r.get("temp")
+                        if temp_val is None:
+                            continue
                         readings.append({
-                            "device_mac": r.get("device_mac") or r.get("mac"),
-                            "temperature": float(r.get("temperature", 0.0)),
+                            "device_mac": r.get("device_mac") or r.get("mac") or r.get("device_id") or r.get("id") or "BLE-TAG-01",
+                            "temperature": float(temp_val),
                             "battery": float(r.get("battery", 95.0)),
                             "humidity": float(r.get("humidity", 45.0)),
                             "rssi": int(r.get("rssi", -65)),
