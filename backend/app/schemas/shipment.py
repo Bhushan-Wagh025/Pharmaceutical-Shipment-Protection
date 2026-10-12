@@ -5,18 +5,50 @@ from app.schemas.telemetry import TemperatureReadingOut, TemperatureForecastOut
 from app.schemas.tray import TrayOut
 
 class GatewayBase(BaseModel):
-    gateway_eui: str
     name: str
+    gateway_eui: Optional[str] = None
+    gateway_identifier: Optional[str] = None
     ip_address: Optional[str] = None
+    host_url: Optional[str] = None
+    api_base_path: str = "/api/v1"
+    auth_method: str = "NONE" # NONE, API_KEY, BEARER_TOKEN, BASIC
+    polling_interval: int = 5
+    timeout_seconds: int = 5
+    is_enabled: bool = True
+    verify_ssl: bool = True
+    tls_certificate: Optional[str] = None
+    adapter_type: str = "GAO_BLE"
     status: str = "ONLINE"
     company_id: Optional[int] = None
     station_id: Optional[int] = None
 
 class GatewayCreate(GatewayBase):
-    pass
+    api_key: Optional[str] = None
+
+class GatewayUpdate(BaseModel):
+    name: Optional[str] = None
+    gateway_eui: Optional[str] = None
+    host_url: Optional[str] = None
+    api_base_path: Optional[str] = None
+    auth_method: Optional[str] = None
+    api_key: Optional[str] = None
+    polling_interval: Optional[int] = None
+    timeout_seconds: Optional[int] = None
+    is_enabled: Optional[bool] = None
+    verify_ssl: Optional[bool] = None
+    tls_certificate: Optional[str] = None
+    adapter_type: Optional[str] = None
+    status: Optional[str] = None
+    station_id: Optional[int] = None
 
 class GatewayOut(GatewayBase):
     id: int
+    api_key_masked: Optional[str] = None
+    api_key: Optional[str] = None
+    is_monitoring: bool = False
+    last_error: Optional[str] = None
+    last_communication_at: Optional[datetime] = None
+    last_reading_data: Optional[str] = None
     last_seen_at: datetime
     created_at: datetime
 

@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     DEFAULT_FORECAST_HORIZON_MINUTES: int = 15
     DEFAULT_COOLING_TARGET: float = 4.2
     
+    # Gateway Security & SSRF
+    ALLOW_PRIVATE_GATEWAY_IPS: bool = os.getenv("ALLOW_PRIVATE_GATEWAY_IPS", "true").lower() in ("true", "1", "yes")
+    GATEWAY_ENCRYPTION_KEY: str = os.getenv("GATEWAY_ENCRYPTION_KEY", "b2b-gateway-secret-enc-key-32ch")
+    STALE_TELEMETRY_THRESHOLD_MINUTES: int = 5
+    
     class Config:
         case_sensitive = True
         env_file = ".env"

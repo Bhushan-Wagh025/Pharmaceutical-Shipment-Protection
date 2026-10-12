@@ -4,11 +4,12 @@ services:
     container_name: pharma_postgres
     restart: always
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgrespassword
-      POSTGRES_DB: pharma_protection
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgrespassword}
+      POSTGRES_DB: ${POSTGRES_DB:-pharma_protection}
+    # Secure default: Do not expose port publicly to WAN. Only bind locally if needed.
+    expose:
+      - "5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -16,13 +17,23 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - pharma_net
 
   redis:
     image: redis:7-alpine
     container_name: pharma_redis
     restart: always
-    ports:
-      - "6379:6379"
+    # Secure default: Redis internal service only
+    expose:
+      - "6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - pharma_net
 
   backend:
     build:
@@ -34,14 +45,25 @@ services:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+psycopg2://postgres:postgrespassword@postgres:5432/pharma_protection
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgrespassword}@postgres:5432/${POSTGRES_DB:-pharma_protection}
       ENABLE_SQLITE_FALLBACK: "false"
-      SECRET_KEY: b2b-pharma-shipment-super-secret-key-2026-safe-production-jwt-token
+      SECRET_KEY: ${SECRET_KEY:-b2b-pharma-shipment-super-secret-key-2026-safe-production-jwt-token}
       REDIS_URL: redis://redis:6379/0
+      GATEWAY_ENCRYPTION_KEY: ${GATEWAY_ENCRYPTION_KEY:-b2b-pharma-fernet-secret-encryption-key-32b}
+      ALLOW_PRIVATE_GATEWAY_IPS: ${ALLOW_PRIVATE_GATEWAY_IPS:-true}
+      STALE_TELEMETRY_THRESHOLD_MINUTES: "5"
+      CORS_ORIGINS: "http://localhost:3000,http://127.0.0.1:3000,http://localhost"
     ports:
       - "8000:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - pharma_net
 
   frontend:
     build:
@@ -52,12 +74,19 @@ services:
     container_name: pharma_frontend
     restart: always
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
       INTERNAL_BACKEND_URL: http://backend:8000
     ports:
       - "3000:3000"
+    networks:
+      - pharma_net
 
 volumes:
   postgres_data:
+
+networks:
+  pharma_net:
+    driver: bridge

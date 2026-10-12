@@ -66,9 +66,24 @@ class Gateway(Base):
     gateway_eui = Column(String(100), unique=True, nullable=False, index=True)
     name = Column(String(255), nullable=False)
     ip_address = Column(String(50), nullable=True)
+    host_url = Column(String(500), nullable=True) # e.g. http://192.168.1.100 or https://gateway.example.com
+    api_base_path = Column(String(255), default="/api/v1")
+    auth_method = Column(String(50), default="NONE") # NONE, API_KEY, BEARER_TOKEN, BASIC
+    api_key_encrypted = Column(Text, nullable=True)
+    polling_interval = Column(Integer, default=5) # seconds
+    timeout_seconds = Column(Integer, default=5) # seconds
+    is_enabled = Column(Boolean, default=True)
+    verify_ssl = Column(Boolean, default=True)
+    tls_certificate = Column(Text, nullable=True)
+    adapter_type = Column(String(50), default="GAO_BLE") # GAO_BLE, SIMULATED
     status = Column(Enum(GatewayStatus), default=GatewayStatus.ONLINE)
+    is_monitoring = Column(Boolean, default=False)
+    last_error = Column(Text, nullable=True)
+    last_communication_at = Column(DateTime, nullable=True)
+    last_reading_data = Column(Text, nullable=True) # JSON snapshot of last reading
     last_seen_at = Column(DateTime, default=datetime.utcnow)
     created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
     station = relationship("Station", back_populates="gateways")

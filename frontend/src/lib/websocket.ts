@@ -2,6 +2,14 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 
+const getWsBaseUrl = () => {
+  if (typeof window === 'undefined') return 'ws://127.0.0.1:8000';
+  if (process.env.NEXT_PUBLIC_WS_URL) return process.env.NEXT_PUBLIC_WS_URL;
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const host = window.location.hostname || '127.0.0.1';
+  return `${protocol}//${host}:8000`;
+};
+
 export function useShipmentWebSocket(shipmentId: string | number, onMessage?: (data: any) => void) {
   const [isConnected, setIsConnected] = useState(false);
   const [lastMessage, setLastMessage] = useState<any>(null);
@@ -9,7 +17,7 @@ export function useShipmentWebSocket(shipmentId: string | number, onMessage?: (d
 
   const connect = useCallback(() => {
     if (!shipmentId) return;
-    const wsUrl = `ws://127.0.0.1:8000/ws/shipments/${shipmentId}`;
+    const wsUrl = `${getWsBaseUrl()}/ws/shipments/${shipmentId}`;
     
     try {
       const socket = new WebSocket(wsUrl);
@@ -31,7 +39,7 @@ export function useShipmentWebSocket(shipmentId: string | number, onMessage?: (d
 
       socket.onclose = () => {
         setIsConnected(false);
-        // Retry connection after 3 seconds
+        // Retry connection after 3 seconds with auto-reconnect
         setTimeout(() => {
           if (wsRef.current === socket) {
             connect();
@@ -65,7 +73,7 @@ export function useDashboardWebSocket(onMessage?: (data: any) => void) {
   const wsRef = useRef<WebSocket | null>(null);
 
   const connect = useCallback(() => {
-    const wsUrl = `ws://127.0.0.1:8000/ws/dashboard`;
+    const wsUrl = `${getWsBaseUrl()}/ws/dashboard`;
     try {
       const socket = new WebSocket(wsUrl);
       wsRef.current = socket;

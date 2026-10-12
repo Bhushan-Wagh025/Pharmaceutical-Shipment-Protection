@@ -16,11 +16,15 @@ class TemperatureReading(Base):
     id = Column(Integer, primary_key=True, index=True)
     shipment_id = Column(Integer, ForeignKey("shipments.id", ondelete="CASCADE"), nullable=False, index=True)
     device_id = Column(Integer, ForeignKey("ble_devices.id", ondelete="SET NULL"), nullable=True, index=True)
+    gateway_id = Column(Integer, ForeignKey("gateways.id", ondelete="SET NULL"), nullable=True, index=True)
     temperature = Column(Float, nullable=False)
     battery = Column(Float, default=95.0)
     humidity = Column(Float, default=45.0)
     signal_rssi = Column(Integer, default=-65)
+    data_source = Column(String(50), default="SIMULATED", index=True) # LIVE, SIMULATED
+    validation_status = Column(String(50), default="VALID", index=True) # VALID, OUT_OF_RANGE, STALE, DUPLICATE
     timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    server_timestamp = Column(DateTime, default=datetime.utcnow, index=True)
 
     # Relationships
     shipment = relationship("Shipment", back_populates="readings")

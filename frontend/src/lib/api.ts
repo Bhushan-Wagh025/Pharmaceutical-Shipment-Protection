@@ -2,6 +2,30 @@ const API_BASE_URL = typeof window !== 'undefined'
   ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1')
   : 'http://127.0.0.1:8000/api/v1';
 
+export interface Gateway {
+  id: number;
+  name: string;
+  gateway_identifier?: string;
+  gateway_eui?: string;
+  host_url?: string;
+  api_base_path?: string;
+  auth_method?: string;
+  api_key?: string;
+  api_key_masked?: string;
+  polling_interval?: number;
+  timeout_seconds?: number;
+  is_enabled?: boolean;
+  verify_ssl?: boolean;
+  tls_certificate?: string;
+  adapter_type?: string;
+  status?: string;
+  is_monitoring?: boolean;
+  last_error?: string | null;
+  last_communication_at?: string | null;
+  last_reading_data?: string | null;
+  created_at?: string;
+}
+
 export function getAuthToken(): string | null {
   if (typeof window === 'undefined') return null;
   return localStorage.getItem('pharma_auth_token');
@@ -98,7 +122,17 @@ export const api = {
   getDevices: () => fetchWithAuth('/devices'),
   createDevice: (data: any) => fetchWithAuth('/devices', { method: 'POST', body: JSON.stringify(data) }),
   getGateways: () => fetchWithAuth('/gateways'),
+  getGateway: (id: string | number) => fetchWithAuth(`/gateways/${id}`),
   createGateway: (data: any) => fetchWithAuth('/gateways', { method: 'POST', body: JSON.stringify(data) }),
+  updateGateway: (id: string | number, data: any) => fetchWithAuth(`/gateways/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  testGatewayConnection: (id: string | number) => fetchWithAuth(`/gateways/${id}/test-connection`, { method: 'POST' }),
+  discoverGatewayDevices: (id: string | number) => fetchWithAuth(`/gateways/${id}/discover-devices`, { method: 'POST' }),
+  startGatewayMonitoring: (id: string | number) => fetchWithAuth(`/gateways/${id}/start-monitoring`, { method: 'POST' }),
+  stopGatewayMonitoring: (id: string | number) => fetchWithAuth(`/gateways/${id}/stop-monitoring`, { method: 'POST' }),
+  getGatewayStatus: (id: string | number) => fetchWithAuth(`/gateways/${id}/status`),
+  emergencyStopTray: (trayId: string | number) => fetchWithAuth(`/trays/${trayId}/emergency-stop`, { method: 'POST' }),
+  overrideTray: (trayId: string | number, targetPercentage: number, reason?: string) => 
+    fetchWithAuth(`/trays/${trayId}/override`, { method: 'POST', body: JSON.stringify({ target_percentage: targetPercentage, reason }) }),
 
   // Alerts
   getAlerts: (params?: { shipment_id?: string | number; unack_only?: boolean; severity?: string; limit?: number }) => {

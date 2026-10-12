@@ -1,25 +1,34 @@
-from typing import Optional
+from typing import Optional, Union, Any
 from datetime import datetime
 from pydantic import BaseModel
 
 class TemperatureReadingCreate(BaseModel):
-    shipment_id: int
-    device_id: Optional[int] = None
+    shipment_id: Optional[int] = None
+    device_id: Optional[Union[int, str]] = None
+    gateway_id: Optional[Union[int, str]] = None
     temperature: float
     battery: Optional[float] = 95.0
+    battery_level: Optional[float] = None
     humidity: Optional[float] = 45.0
     signal_rssi: Optional[int] = -65
+    rssi: Optional[int] = None
+    data_source: str = "SIMULATED" # LIVE, SIMULATED
+    validation_status: str = "VALID"
     timestamp: Optional[datetime] = None
 
 class TemperatureReadingOut(BaseModel):
     id: int
-    shipment_id: int
+    shipment_id: Optional[int] = None
     device_id: Optional[int] = None
+    gateway_id: Optional[int] = None
     temperature: float
     battery: float
     humidity: float
     signal_rssi: int
+    data_source: str = "SIMULATED"
+    validation_status: str = "VALID"
     timestamp: datetime
+    server_timestamp: Optional[datetime] = None
 
     class Config:
         from_attributes = True

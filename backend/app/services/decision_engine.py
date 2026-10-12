@@ -28,11 +28,13 @@ class DecisionEngine:
         db: Session,
         shipment: Shipment,
         current_temp: float,
-        forecast: Optional[Dict[str, Any]] = None
+        forecast: Optional[Dict[str, Any]] = None,
+        is_stale: bool = False
     ) -> Dict[str, Any]:
         """
         Evaluates current thermal reading and AI forecast.
         Executes protection action if excursion is imminent.
+        Suspends actuation if sensor telemetry is stale.
         """
         temp_limit = shipment.temp_limit
         predicted_temp = forecast.get("predicted_temp", current_temp) if forecast else current_temp
@@ -43,6 +45,27 @@ class DecisionEngine:
         tray = shipment.tray
         if not tray:
             tray = db.query(Tray).first()
+
+        # Check if telemetry is stale
+        if is_stale:
+            AlertService.create_alert(
+                db=db,
+                shipment_id=shipment.id,
+                alert_type=AlertType.SENSOR_OFFLINE.value,
+                severity=AlertSeverity.WARNING.value,
+                title="Stale Sensor Telemetry - Protection Suspended",
+                message="Telemetry is older than safety threshold. Automated actuation suspended to prevent false triggers."
+            )
+            return {
+                "decision": "SUSPENDED_STALE_TELEMETRY",
+                "reason": "Sensor telemetry is stale (>5 min old). Automatic physical actuation suspended.",
+                "threshold": temp_limit,
+                "predicted_temp": round(predicted_temp, 2),
+                "current_temp": round(current_temp, 2),
+                "action_taken": False,
+                "tray_state": tray.state.value if (tray and hasattr(tray.state, 'value')) else (tray.state if tray else "N/A"),
+                "risk_level": "UNKNOWN_STALE"
+            }
 
         decision = "MONITOR"
         reason = "Temperature and AI trajectory within safe tolerances."
@@ -211,3 +234,48 @@ class DecisionEngine:
         }
 
 decision_engine = DecisionEngine()
+
+def evaluate_protection_decision(
+    current_temp: float,
+    predicted_temp: float,
+    temp_limit: float,
+    current_tray_state: str = "EXTENDED",
+    is_stale: bool = False
+) -> Dict[str, Any]:
+    """
+    Pure, deterministic evaluation function for thermal safety and AI forecasts.
+    Guarantees reproducible decisions without database side-effects.
+    """
+    if is_stale:
+        return {
+            "decision": "SUSPENDED_STALE_TELEMETRY",
+            "reason": "Stale telemetry (>5 min old). Automatic physical actuation suspended to prevent false triggers.",
+            "threshold": temp_limit,
+            "predicted_temp": round(predicted_temp, 2),
+            "current_temp": round(current_temp, 2),
+            "action_taken": False
+        }
+
+    should_protect = (
+        predicted_temp >= temp_limit or
+        current_temp >= (temp_limit - 0.2)
+    )
+
+    if should_protect and current_tray_state not in ["PROTECTED", "MOVING_IN"]:
+        return {
+            "decision": "TRIGGER_PROTECTION",
+            "reason": f"AI Forecast predicted temperature {predicted_temp:.2f}°C exceeding limit {temp_limit:.1f}°C",
+            "threshold": temp_limit,
+            "predicted_temp": round(predicted_temp, 2),
+            "current_temp": round(current_temp, 2),
+            "action_taken": True
+        }
+
+    return {
+        "decision": "NO_ACTION",
+        "reason": "Temperature and AI trajectory within safe tolerances.",
+        "threshold": temp_limit,
+        "predicted_temp": round(predicted_temp, 2),
+        "current_temp": round(current_temp, 2),
+        "action_taken": False
+    }

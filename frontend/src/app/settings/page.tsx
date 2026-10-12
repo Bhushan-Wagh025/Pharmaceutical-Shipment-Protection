@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Settings as SettingsIcon, Save, CheckCircle2 } from 'lucide-react';
+import Link from 'next/link';
+import { Settings as SettingsIcon, Save, CheckCircle2, Radio, ArrowRight } from 'lucide-react';
 
 export default function SettingsPage() {
   const [saved, setSaved] = useState(false);
@@ -23,13 +24,23 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-6 max-w-4xl">
-      <div className="pb-3 border-b border-slate-200">
-        <h1 className="text-xl font-bold tracking-tight text-slate-900">
-          Global AIoT System Configuration
-        </h1>
-        <p className="text-xs text-slate-500">
-          Configure default safety bounds, AI regression parameters, and hardware gateway bindings.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-200 gap-3">
+        <div>
+          <h1 className="text-xl font-bold tracking-tight text-slate-900">
+            Global AIoT System Configuration
+          </h1>
+          <p className="text-xs text-slate-500">
+            Configure default safety bounds, AI regression parameters, and hardware gateway bindings.
+          </p>
+        </div>
+        <Link
+          href="/settings/gateways"
+          className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-2 shadow-xs transition-colors shrink-0"
+        >
+          <Radio className="w-3.5 h-3.5" />
+          <span>Configure BLE Gateways</span>
+          <ArrowRight className="w-3 h-3" />
+        </Link>
       </div>
 
       {saved && (

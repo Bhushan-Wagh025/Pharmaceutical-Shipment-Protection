@@ -16,8 +16,12 @@ class AuditService:
         details: Optional[str] = None,
         user_id: Optional[int] = None,
         user_email: Optional[str] = "system.decision.engine@pharmaprotect.io",
-        ip_address: Optional[str] = "127.0.0.1"
+        ip_address: Optional[str] = "127.0.0.1",
+        user: Optional[object] = None
     ) -> AuditLog:
+        if user is not None:
+            user_id = getattr(user, "id", user_id)
+            user_email = getattr(user, "email", user_email)
         entry = AuditLog(
             user_id=user_id,
             user_email=user_email,

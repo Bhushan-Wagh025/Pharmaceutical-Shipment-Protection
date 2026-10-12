@@ -7,6 +7,7 @@ import {
   Snowflake,
   Layers,
   Wifi,
+  WifiOff,
   Activity,
   CheckCircle2,
   Play,
@@ -20,14 +21,21 @@ import {
   Volume2,
   VolumeX,
   AlertTriangle,
+  AlertOctagon,
   Laptop,
   MapPin,
   Box,
   Cable,
   ShieldCheck,
+  ShieldAlert,
   ChevronRight,
   Gauge,
   Sparkles,
+  Settings,
+  RefreshCw,
+  HardDrive,
+  Clock,
+  ExternalLink,
 } from 'lucide-react';
 import {
   LineChart,
@@ -39,7 +47,8 @@ import {
   ResponsiveContainer,
   ReferenceLine,
 } from 'recharts';
-import { api } from '@/lib/api';
+import { api, type Gateway } from '@/lib/api';
+import { useShipmentWebSocket } from '@/lib/websocket';
 import type {
   HardwareStageId,
 } from '@/components/simulator/HardwareArchitectureDiagram';
@@ -59,8 +68,9 @@ interface EventItem {
   isNew?: boolean;
 }
 
-// Hardware Stages matching user architecture
 type HardwareStage = HardwareStageId;
+type TrayState = 'EXTENDED' | 'MOVING_IN' | 'PROTECTED' | 'MOVING_OUT' | 'ERROR';
+type DataSourceMode = 'LIVE' | 'SIMULATED';
 
 export default function LiveMonitoringPage() {
   // Real-time loop state
@@ -69,6 +79,14 @@ export default function LiveMonitoringPage() {
   const [isAutonomous, setIsAutonomous] = useState<boolean>(true);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(false);
   const audioCtxRef = useRef<AudioContext | null>(null);
+
+  // Pipeline Data Source Mode: LIVE (Real/Mock BLE Gateway) vs SIMULATED (Local Rig Sim)
+  const [dataSource, setDataSource] = useState<DataSourceMode>('LIVE');
+  const [gateways, setGateways] = useState<Gateway[]>([]);
+  const [selectedGatewayId, setSelectedGatewayId] = useState<number | string>(1);
+  const [selectedDeviceMac, setSelectedDeviceMac] = useState<string>('C3:4A:21:88:9F:12');
+  const [lastReceivedTime, setLastReceivedTime] = useState<string>('Just now');
+  const [serverTimestamp, setServerTimestamp] = useState<string>('');
 
   // Active hardware pipeline step currently executing
   const [activeHwStage, setActiveHwStage] = useState<HardwareStage>('BEACON');
@@ -83,10 +101,15 @@ export default function LiveMonitoringPage() {
   const [trayPosition, setTrayPosition] = useState<number>(0);
   const [isTrayMoving, setIsTrayMoving] = useState<boolean>(false);
   const [trayTarget, setTrayTarget] = useState<number>(0);
+  const [trayState, setTrayState] = useState<TrayState>('EXTENDED');
+  const [isEmergencyStopped, setIsEmergencyStopped] = useState<boolean>(false);
 
   // AI Prediction & Risk
   const [predictedTemp, setPredictedTemp] = useState<number>(7.6);
-  const [tempLimit, setTempLimit] = useState<number>(8.0);
+  const [forecastHorizon, setForecastHorizon] = useState<string>('15 min');
+  const [tempMinLimit, setTempMinLimit] = useState<number>(2.0);
+  const [tempMaxLimit, setTempMaxLimit] = useState<number>(8.0);
+  const [riskLevel, setRiskLevel] = useState<'NORMAL' | 'ELEVATED' | 'CRITICAL'>('NORMAL');
   const [aiDecision, setAiDecision] = useState<string>('Monitoring (Normal)');
   const [decisionTime, setDecisionTime] = useState<string>('14:31:42');
   const [isBreached, setIsBreached] = useState<boolean>(false);
@@ -95,6 +118,8 @@ export default function LiveMonitoringPage() {
   const [packetsCount, setPacketsCount] = useState<number>(1428);
   const [motorCurrentMa, setMotorCurrentMa] = useState<number>(180);
   const [clockTime, setClockTime] = useState<string>('');
+  const [batteryPct, setBatteryPct] = useState<number>(98);
+  const [rssiDbm, setRssiDbm] = useState<number>(-58);
 
   // 6 Pipeline Steps (1 to 6)
   const [activeStep, setActiveStep] = useState<number>(1);
@@ -119,6 +144,32 @@ export default function LiveMonitoringPage() {
     { time: '14:30', packageTemp: 6.2, coldTemp: 3.2, limit: 8.0 },
     { time: '14:32', packageTemp: 5.4, coldTemp: 3.2, limit: 8.0 },
   ]);
+
+  // Load configured gateways from backend
+  useEffect(() => {
+    api.getGateways()
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          setGateways(data);
+          setSelectedGatewayId(data[0].id);
+        }
+      })
+      .catch(() => {
+        // Fallback default gateway
+        setGateways([
+          {
+            id: 1,
+            name: 'GAO BLE Gateway #1 (Warehouse A)',
+            gateway_identifier: 'GAO-217030-GW01',
+            host_url: 'http://192.168.1.100:8080',
+            adapter_type: 'gao_ble',
+            status: 'CONNECTED',
+            is_enabled: true,
+            is_monitoring: true,
+          } as any,
+        ]);
+      });
+  }, []);
 
   // Web Audio Synth
   const playBeep = useCallback((freq = 880, duration = 0.1, type: OscillatorType = 'sine') => {
@@ -145,6 +196,67 @@ export default function LiveMonitoringPage() {
     }
   }, [soundEnabled]);
 
+  // WebSocket Live Updates
+  const { isConnected: isWsConnected } = useShipmentWebSocket(1, (data) => {
+    if (!data) return;
+    if (data.type === 'telemetry' || data.temperature !== undefined) {
+      const nowStr = new Date().toTimeString().split(' ')[0];
+      const tempVal = Number(data.temperature ?? packageTemp);
+      setPackageTemp(tempVal);
+      setLastReceivedTime(`${nowStr} UTC`);
+      setServerTimestamp(data.timestamp || nowStr);
+      setPacketsCount((prev) => prev + 1);
+
+      if (data.battery !== undefined) setBatteryPct(data.battery);
+      if (data.rssi !== undefined) setRssiDbm(data.rssi);
+
+      if (data.predicted_temp !== undefined) {
+        setPredictedTemp(data.predicted_temp);
+        if (data.predicted_temp >= tempMaxLimit) {
+          setIsBreached(true);
+          setRiskLevel('CRITICAL');
+        } else if (data.predicted_temp >= tempMaxLimit - 0.5) {
+          setIsBreached(false);
+          setRiskLevel('ELEVATED');
+        } else {
+          setIsBreached(false);
+          setRiskLevel('NORMAL');
+        }
+      }
+
+      if (data.tray_state) {
+        setTrayState(data.tray_state);
+        if (data.tray_state === 'PROTECTED') setTrayPosition(100);
+        else if (data.tray_state === 'EXTENDED') setTrayPosition(0);
+      }
+
+      // Append chart point
+      setChartData((prev) => {
+        const nextPt: ChartPoint = {
+          time: nowStr.slice(0, 5),
+          packageTemp: tempVal,
+          coldTemp: coldTemp,
+          limit: tempMaxLimit,
+        };
+        const sliced = prev.length > 12 ? prev.slice(1) : prev;
+        return [...sliced, nextPt];
+      });
+    }
+
+    if (data.alert) {
+      setEvents((prev) => [
+        {
+          id: Date.now().toString(),
+          time: new Date().toTimeString().split(' ')[0],
+          type: data.alert.severity === 'CRITICAL' ? 'red' : 'amber',
+          message: data.alert.message || 'Telemetry threshold exceeded',
+          isNew: true,
+        },
+        ...prev.slice(0, 7),
+      ]);
+    }
+  });
+
   // Clock Update
   useEffect(() => {
     const updateClock = () => {
@@ -158,15 +270,27 @@ export default function LiveMonitoringPage() {
 
   // Smooth Motor Motion Interpolation
   useEffect(() => {
+    if (isEmergencyStopped) {
+      setIsTrayMoving(false);
+      setTrayState('ERROR');
+      return;
+    }
+
     if (trayPosition === trayTarget) {
       setIsTrayMoving(false);
       setMotorCurrentMa(180);
+      if (trayPosition >= 90) {
+        setTrayState('PROTECTED');
+      } else if (trayPosition <= 10) {
+        setTrayState('EXTENDED');
+      }
       return;
     }
 
     setIsTrayMoving(true);
     setActiveHwStage('SERVO');
     setMotorCurrentMa(650);
+    setTrayState(trayTarget > trayPosition ? 'MOVING_IN' : 'MOVING_OUT');
 
     const stepSize = (trayTarget > trayPosition ? 4 : -4) * simSpeed;
     const timer = setTimeout(() => {
@@ -181,88 +305,82 @@ export default function LiveMonitoringPage() {
     }, 40);
 
     return () => clearTimeout(timer);
-  }, [trayPosition, trayTarget, simSpeed, playBeep]);
+  }, [trayPosition, trayTarget, simSpeed, playBeep, isEmergencyStopped]);
 
-  // Automated Hardware Pipeline Sequencer (Continuous Loop through 6 Steps)
+  // Automated Hardware Pipeline Sequencer (Continuous Loop through 6 Steps in Sim Mode)
   useEffect(() => {
-    if (!isPlaying || !isAutoWalkthrough) return;
+    if (!isPlaying || !isAutoWalkthrough || dataSource === 'LIVE') return;
 
     let stepDuration = 2800 / simSpeed;
     if (activeStep === 6) {
-      stepDuration = 4500 / simSpeed; // Stay in cold chamber longer so protection is clearly observed
+      stepDuration = 4500 / simSpeed;
     } else if (activeStep === 5) {
-      stepDuration = 3400 / simSpeed; // Allow servo carriage to complete travel
+      stepDuration = 3400 / simSpeed;
     }
 
     const timer = setTimeout(() => {
       if (activeStep === 1) {
-        // Step 1 (Beacon) -> Step 2 (Gateway)
         setActiveStep(2);
         setActiveHwStage('GATEWAY');
         setPacketsCount((prev) => prev + 1);
         playBeep(640, 0.08);
       } else if (activeStep === 2) {
-        // Step 2 (Gateway) -> Step 3 (Laptop/AI)
         setActiveStep(3);
         setActiveHwStage('LAPTOP_AI');
         setPackageTemp(7.9);
         setPredictedTemp(8.3);
         setIsBreached(true);
+        setRiskLevel('CRITICAL');
         setAiDecision('Move to Cooling');
         playBeep(880, 0.15, 'sawtooth');
       } else if (activeStep === 3) {
-        // Step 3 (Laptop/AI) -> Step 4 (ESP32)
         setActiveStep(4);
         setActiveHwStage('ESP32');
         playBeep(720, 0.08);
       } else if (activeStep === 4) {
-        // Step 4 (ESP32) -> Step 5 (Servo & Tray in motion)
         setActiveStep(5);
         setActiveHwStage('SERVO');
         setTrayTarget(100);
         playBeep(550, 0.1);
       } else if (activeStep === 5) {
-        // Step 5 (Servo & Tray) -> Step 6 (Cold Chamber Sealed)
         setActiveStep(6);
         setActiveHwStage('COLD_CHAMBER');
         setTrayPosition(100);
         setPackageTemp(5.4);
         setIsBreached(false);
+        setRiskLevel('NORMAL');
         setAiDecision('Protected in Cooling');
         playBeep(1040, 0.2, 'triangle');
       } else if (activeStep === 6) {
-        // Step 6 (Cold Chamber) -> Reset to Step 1 (Beacon at Ambient Bay)
         setActiveStep(1);
         setActiveHwStage('BEACON');
         setTrayTarget(0);
         setPackageTemp(7.2);
         setPredictedTemp(7.6);
         setIsBreached(false);
+        setRiskLevel('NORMAL');
         setAiDecision('Monitoring (Normal)');
         playBeep(480, 0.1);
       }
     }, stepDuration);
 
     return () => clearTimeout(timer);
-  }, [isPlaying, isAutoWalkthrough, activeStep, simSpeed, playBeep]);
+  }, [isPlaying, isAutoWalkthrough, activeStep, simSpeed, playBeep, dataSource]);
 
-  // Continuous Telemetry Cycle & Ambient Physics
+  // Telemetry physics in SIMULATED mode
   useEffect(() => {
-    if (!isPlaying) return;
+    if (!isPlaying || dataSource === 'LIVE') return;
 
     const intervalTime = Math.max(300, 1000 / simSpeed);
 
     const interval = setInterval(() => {
-      // 1. Increment packet counts
       setPacketsCount((prev) => prev + 1);
 
-      // 2. Micro fluctuation of cold chamber
       setColdTemp((prev) => {
         const next = 3.2 + (Math.random() - 0.5) * 0.15;
         return Number(next.toFixed(1));
       });
 
-      // 3. Update Package Temperature based on tray position and ambient
       setPackageTemp((prev) => {
         let delta = 0;
         if (trayPosition >= 80) {
@@ -277,16 +395,14 @@ export default function LiveMonitoringPage() {
         const newTemp = Math.max(2.8, Math.min(32.0, prev + delta));
         const rounded = Number(newTemp.toFixed(2));
 
-        // 4. Update AI Prediction
         const slope = delta * 15;
         const pred = Number((newTemp + slope * 1.8).toFixed(1));
         setPredictedTemp(pred);
 
-        // Check breach condition
-        if (pred >= tempLimit) {
+        if (pred >= tempMaxLimit) {
           setIsBreached(true);
-          // If autonomous mode is active and tray is extended, automatically retract!
-          if (isAutonomous && trayPosition < 50 && !isTrayMoving) {
+          setRiskLevel('CRITICAL');
+          if (isAutonomous && trayPosition < 50 && !isTrayMoving && !isEmergencyStopped) {
             setActiveHwStage('LAPTOP_AI');
             setTimeout(() => setActiveHwStage('ESP32'), 400);
 
@@ -307,8 +423,12 @@ export default function LiveMonitoringPage() {
             };
             setEvents((evs) => [autoEvent, ...evs.slice(0, 7)]);
           }
+        } else if (pred >= tempMaxLimit - 0.5) {
+          setIsBreached(false);
+          setRiskLevel('ELEVATED');
         } else {
           setIsBreached(false);
+          setRiskLevel('NORMAL');
           if (trayPosition >= 90) {
             setAiDecision('Protected in Cooling');
             setActiveStep(5);
@@ -318,7 +438,6 @@ export default function LiveMonitoringPage() {
           }
         }
 
-        // 5. Append live chart streaming point every ~3 seconds
         if (Math.random() < 0.35) {
           const nowStr = new Date().toTimeString().split(' ')[0].slice(0, 5);
           setChartData((prevData) => {
@@ -338,19 +457,19 @@ export default function LiveMonitoringPage() {
     }, intervalTime);
 
     return () => clearInterval(interval);
-  }, [isPlaying, simSpeed, trayPosition, ambientTemp, tempLimit, isAutonomous, isTrayMoving, playBeep]);
+  }, [isPlaying, simSpeed, trayPosition, ambientTemp, tempMaxLimit, isAutonomous, isTrayMoving, playBeep, dataSource, isEmergencyStopped]);
 
   // Actions
   const handleTriggerExcursion = async () => {
     playBeep(880, 0.25, 'sawtooth');
-    setIsAutoWalkthrough(false); // Manual override
+    setIsAutoWalkthrough(false);
 
-    // 1. Push tray out to ambient & inject heat
     setTrayTarget(0);
     setAmbientTemp(28.0);
     setPackageTemp(7.9);
     setPredictedTemp(8.6);
     setIsBreached(true);
+    setRiskLevel('CRITICAL');
     setActiveStep(1);
     setActiveHwStage('BEACON');
 
@@ -364,13 +483,11 @@ export default function LiveMonitoringPage() {
     };
     setEvents((prev) => [excursionEvent, ...prev.slice(0, 7)]);
 
-    // Call backend simulator step in background if available
     try {
       api.simulatorTriggerExcursion(1).catch(() => {});
     } catch {}
 
-    // 2. If autonomous, trigger cooling after 1.5s
-    if (isAutonomous) {
+    if (isAutonomous && !isEmergencyStopped) {
       setTimeout(() => {
         playBeep(1200, 0.3, 'triangle');
         setActiveHwStage('LAPTOP_AI');
@@ -389,7 +506,6 @@ export default function LiveMonitoringPage() {
         };
         setEvents((prev) => [aiEvent, ...prev.slice(0, 7)]);
 
-        // 3. ESP32 drives Servo
         setTimeout(() => {
           setActiveHwStage('ESP32');
           setActiveStep(4);
@@ -421,14 +537,17 @@ export default function LiveMonitoringPage() {
 
   const handleReset = () => {
     playBeep(600, 0.1);
+    setIsEmergencyStopped(false);
     setPackageTemp(7.2);
     setPredictedTemp(7.6);
     setAmbientTemp(22.5);
     setColdTemp(3.2);
     setTrayTarget(0);
     setTrayPosition(0);
+    setTrayState('EXTENDED');
     setActiveStep(1);
     setActiveHwStage('BEACON');
+    setRiskLevel('NORMAL');
     setAiDecision('Monitoring (Normal)');
     setDecisionTime(new Date().toTimeString().split(' ')[0]);
     setIsBreached(false);
@@ -436,6 +555,7 @@ export default function LiveMonitoringPage() {
   };
 
   const toggleTrayTarget = () => {
+    if (isEmergencyStopped) return;
     playBeep(520, 0.1);
     const newTarget = trayTarget === 100 ? 0 : 100;
     setTrayTarget(newTarget);
@@ -443,14 +563,58 @@ export default function LiveMonitoringPage() {
       setActiveStep(2);
       setActiveHwStage('BEACON');
       setAiDecision('Extended in Ambient');
+      api.moveTrayOut(1).catch(() => {});
     } else {
       setActiveStep(3);
       setActiveHwStage('ESP32');
       setAiDecision('Moving to Cooling');
+      api.moveTrayIn(1).catch(() => {});
     }
   };
 
-  // Helper for determining package physical location text & badge
+  // Hardware Emergency Stop
+  const handleEmergencyStop = async () => {
+    playBeep(320, 0.4, 'sawtooth');
+    setIsEmergencyStopped(true);
+    setIsTrayMoving(false);
+    setTrayState('ERROR');
+    setMotorCurrentMa(0);
+
+    const nowTime = new Date().toTimeString().split(' ')[0];
+    const estopEvent: EventItem = {
+      id: Date.now().toString(),
+      time: nowTime,
+      type: 'red',
+      message: 'EMERGENCY STOP ENGAGED: Motor power interlocked. Actuation halted at position ' + Math.round(trayPosition) + '%.',
+      isNew: true,
+    };
+    setEvents((prev) => [estopEvent, ...prev.slice(0, 7)]);
+
+    try {
+      await api.emergencyStopTray(1);
+    } catch {}
+  };
+
+  // Manual Operator Override
+  const handleManualOverride = async (target: number) => {
+    playBeep(580, 0.15);
+    setIsEmergencyStopped(false);
+    setTrayTarget(target);
+    const nowTime = new Date().toTimeString().split(' ')[0];
+    const overrideEvent: EventItem = {
+      id: Date.now().toString(),
+      time: nowTime,
+      type: 'amber',
+      message: `Manual Operator Override: Driving sliding tray carriage to ${target}% target position.`,
+      isNew: true,
+    };
+    setEvents((prev) => [overrideEvent, ...prev.slice(0, 7)]);
+
+    try {
+      await api.overrideTray(1, target, 'Operator manual live command override');
+    } catch {}
+  };
+
   const getPackageLocation = () => {
     if (trayPosition >= 90) {
       return {
@@ -481,8 +645,109 @@ export default function LiveMonitoringPage() {
 
   const pkgLoc = getPackageLocation();
 
+  const selectedGateway = gateways.find((g) => g.id === Number(selectedGatewayId)) || gateways[0];
+
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto pb-12 font-sans select-none">
+      {/* ========================================================================= */}
+      {/* 0. B2B ENTERPRISE CONTROL & GATEWAY HEADER BAR                            */}
+      {/* ========================================================================= */}
+      <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        {/* Left: Pipeline Mode & Gateway Selector */}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Live vs Simulated Mode Toggle */}
+          <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
+            <button
+              onClick={() => setDataSource('LIVE')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                dataSource === 'LIVE'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <span className={`w-2 h-2 rounded-full ${dataSource === 'LIVE' ? 'bg-white animate-pulse' : 'bg-emerald-500'}`}></span>
+              <span>LIVE BLE STREAM</span>
+            </button>
+            <button
+              onClick={() => setDataSource('SIMULATED')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                dataSource === 'SIMULATED'
+                  ? 'bg-purple-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>SIMULATED RIG</span>
+            </button>
+          </div>
+
+          {/* Gateway Selector */}
+          <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl text-xs">
+            <Radio className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+            <span className="text-slate-500 font-medium">Gateway:</span>
+            <select
+              value={selectedGatewayId}
+              onChange={(e) => setSelectedGatewayId(e.target.value)}
+              className="bg-transparent font-bold text-slate-800 focus:outline-hidden cursor-pointer"
+            >
+              {gateways.map((gw) => (
+                <option key={gw.id} value={gw.id}>
+                  {gw.name} ({gw.gateway_identifier || gw.adapter_type})
+                </option>
+              ))}
+            </select>
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800">
+              ● {selectedGateway?.status || 'CONNECTED'}
+            </span>
+          </div>
+
+          {/* BLE Device Tag */}
+          <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl text-xs">
+            <HardDrive className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+            <span className="text-slate-500 font-medium">Device:</span>
+            <span className="font-mono font-bold text-slate-800">{selectedDeviceMac}</span>
+            <span className="text-[10px] text-slate-500 font-mono">({rssiDbm} dBm | Batt: {batteryPct}%)</span>
+          </div>
+        </div>
+
+        {/* Right: Realtime status, Emergency Stop, Settings Link */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* WebSocket status pill */}
+          <div className={`px-2.5 py-1 rounded-lg text-xs font-mono font-semibold flex items-center gap-1.5 border ${
+            isWsConnected
+              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+              : 'bg-amber-50 text-amber-700 border-amber-200'
+          }`}>
+            <span className={`w-2 h-2 rounded-full ${isWsConnected ? 'bg-emerald-500 animate-ping' : 'bg-amber-500'}`}></span>
+            <span>{isWsConnected ? 'WS LIVE' : 'WS RECONNECTING'}</span>
+          </div>
+
+          {/* Hardware Emergency Stop */}
+          <button
+            onClick={handleEmergencyStop}
+            className={`px-3 py-1.5 rounded-xl text-xs font-extrabold flex items-center gap-1.5 border transition-all active:scale-95 shadow-xs ${
+              isEmergencyStopped
+                ? 'bg-red-700 text-white border-red-800 animate-pulse'
+                : 'bg-red-50 hover:bg-red-100 text-red-700 border-red-300'
+            }`}
+            title="Actuator Emergency Stop Interlock"
+          >
+            <AlertOctagon className="w-3.5 h-3.5 fill-red-600 text-white" />
+            <span>{isEmergencyStopped ? 'E-STOP ACTIVE' : 'EMERGENCY STOP'}</span>
+          </button>
+
+          {/* Configure Gateways Link */}
+          <Link
+            href="/settings/gateways"
+            className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 transition-all flex items-center gap-1.5"
+          >
+            <Settings className="w-3.5 h-3.5 text-slate-600" />
+            <span>Gateways</span>
+            <ExternalLink className="w-3 h-3 text-slate-400" />
+          </Link>
+        </div>
+      </div>
+
       {/* ========================================================================= */}
       {/* 1. TOP METRIC STATS ROW (5 Cards)                                        */}
       {/* ========================================================================= */}
@@ -498,11 +763,18 @@ export default function LiveMonitoringPage() {
               }`}>
                 <Thermometer className="w-5 h-5 stroke-[2.2]" />
               </div>
-              <div className="text-xs font-semibold text-slate-600">Package Temperature</div>
+              <div>
+                <div className="text-xs font-semibold text-slate-600">Current Temperature</div>
+                <div className="text-[10px] text-slate-400 font-mono">Limit: {tempMinLimit.toFixed(1)}° - {tempMaxLimit.toFixed(1)}°C</div>
+              </div>
             </div>
-            {isBreached && (
+            {isBreached ? (
               <span className="animate-pulse text-[10px] font-bold text-red-600 px-1.5 py-0.5 rounded bg-red-100">
-                AT RISK
+                EXCURSION
+              </span>
+            ) : (
+              <span className="text-[10px] font-bold text-emerald-700 px-1.5 py-0.5 rounded bg-emerald-50 border border-emerald-200">
+                OPTIMAL
               </span>
             )}
           </div>
@@ -511,41 +783,42 @@ export default function LiveMonitoringPage() {
           }`}>
             {packageTemp.toFixed(1)} <span className="text-lg font-normal text-slate-500">°C</span>
           </div>
-          <div className="flex items-center justify-between mt-2 pl-1">
-            <div className={`text-[11px] font-semibold flex items-center gap-1 ${
-              isBreached ? 'text-red-500' : 'text-emerald-600'
-            }`}>
-              <span>{trayPosition >= 90 ? '↓ Cooling Active (-0.3°C)' : '↑ Warming in Ambient'}</span>
-            </div>
-            <svg className="w-16 h-4 overflow-visible" viewBox="0 0 50 14" fill="none">
-              <path
-                d={trayPosition >= 90 ? "M 0 3 Q 15 5, 25 9 T 50 12" : "M 0 11 Q 15 9, 25 5 T 50 2"}
-                stroke={isBreached ? "#ef4444" : "#10b981"}
-                strokeWidth="2.2"
-                strokeLinecap="round"
-              />
-            </svg>
+          <div className="flex items-center justify-between mt-2 pl-1 text-[11px]">
+            <span className="text-slate-500 font-mono">Rx: {lastReceivedTime}</span>
+            <span className={`font-semibold ${isBreached ? 'text-red-600' : 'text-emerald-600'}`}>
+              {trayPosition >= 90 ? 'Protected' : 'Ambient Air'}
+            </span>
           </div>
         </div>
 
-        {/* Card 2: Ambient Temperature */}
+        {/* Card 2: AI Excursion Forecast */}
         <div className="bg-white rounded-xl p-4 border border-slate-200/90 shadow-xs hover:shadow-sm transition-all">
-          <div className="flex items-center gap-2.5 mb-2">
-            <div className="w-9 h-9 rounded-full bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600">
-              <Thermometer className="w-5 h-5 stroke-[2.2]" />
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
+                <Cpu className="w-5 h-5 stroke-[2.2]" />
+              </div>
+              <div>
+                <div className="text-xs font-semibold text-slate-600">AI Forecast (+{forecastHorizon})</div>
+                <div className="text-[10px] text-slate-400 font-mono">Ridge Regr. v1.2</div>
+              </div>
             </div>
-            <div className="text-xs font-semibold text-slate-600">Ambient Temperature</div>
+            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+              riskLevel === 'CRITICAL'
+                ? 'bg-red-100 text-red-700 animate-pulse'
+                : riskLevel === 'ELEVATED'
+                ? 'bg-amber-100 text-amber-800'
+                : 'bg-emerald-100 text-emerald-800'
+            }`}>
+              {riskLevel}
+            </span>
           </div>
           <div className="text-3xl font-extrabold text-slate-900 tracking-tight pl-1 font-mono">
-            {ambientTemp.toFixed(1)} <span className="text-lg font-normal text-slate-500">°C</span>
+            {predictedTemp.toFixed(1)} <span className="text-lg font-normal text-slate-500">°C</span>
           </div>
-          <div className="flex items-center justify-between mt-2 pl-1">
-            <div className="text-[11px] font-medium text-emerald-600 flex items-center gap-1">
-              <span className="text-xs">✔</span> {ambientTemp > 25 ? 'High Ambient' : 'Normal Room Temp'}
-            </div>
-            <svg className="w-16 h-4 text-emerald-500 overflow-visible" viewBox="0 0 50 14" fill="none">
-              <path d="M 0 7 Q 15 4, 30 9 T 50 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            </svg>
+          <div className="flex items-center justify-between mt-2 pl-1 text-[11px] text-slate-500">
+            <span>Horizon: <strong className="text-indigo-700 font-mono">15m</strong></span>
+            <span className="font-semibold text-slate-700">{aiDecision}</span>
           </div>
         </div>
 
@@ -555,39 +828,49 @@ export default function LiveMonitoringPage() {
             <div className="w-9 h-9 rounded-full bg-cyan-50 border border-cyan-100 flex items-center justify-center text-cyan-600">
               <Snowflake className="w-5 h-5 stroke-[2.2]" />
             </div>
-            <div className="text-xs font-semibold text-slate-600">Cold Compartment</div>
+            <div>
+              <div className="text-xs font-semibold text-slate-600">Cold Chamber (+Ice Pack)</div>
+              <div className="text-[10px] text-cyan-700 font-mono">PUR Vacuum Enclosure</div>
+            </div>
           </div>
           <div className="text-3xl font-extrabold text-slate-900 tracking-tight pl-1 font-mono">
             {coldTemp.toFixed(1)} <span className="text-lg font-normal text-slate-500">°C</span>
           </div>
-          <div className="flex items-center justify-between mt-2 pl-1">
-            <div className="text-[11px] font-medium text-cyan-700 flex items-center gap-1">
-              <span className="text-xs">✔</span> Cooling Active (Ice Gel)
-            </div>
-            <svg className="w-16 h-4 text-cyan-500 overflow-visible" viewBox="0 0 50 14" fill="none">
-              <path d="M 0 8 L 15 8 L 30 7 L 50 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            </svg>
+          <div className="flex items-center justify-between mt-2 pl-1 text-[11px]">
+            <span className="text-cyan-700 font-medium">Ambient: {ambientTemp.toFixed(1)}°C</span>
+            <span className="text-slate-400 font-mono">Delta: -19.3°C</span>
           </div>
         </div>
 
-        {/* Card 4: Tray Position */}
+        {/* Card 4: Motorized Tray State */}
         <div className="bg-white rounded-xl p-4 border border-slate-200/90 shadow-xs hover:shadow-sm transition-all">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2.5">
               <div className="w-9 h-9 rounded-full bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600">
                 <Layers className="w-5 h-5 stroke-[2.2]" />
               </div>
-              <div className="text-xs font-semibold text-slate-600">Tray Position</div>
+              <div className="text-xs font-semibold text-slate-600">Tray Actuator State</div>
             </div>
-            <span className="font-mono text-xs font-bold text-slate-700">{Math.round(trayPosition)}%</span>
+            <span className={`font-mono text-[10px] font-extrabold px-1.5 py-0.5 rounded ${
+              trayState === 'PROTECTED'
+                ? 'bg-cyan-100 text-cyan-800'
+                : trayState === 'EXTENDED'
+                ? 'bg-amber-100 text-amber-800'
+                : trayState === 'ERROR'
+                ? 'bg-red-100 text-red-800'
+                : 'bg-blue-100 text-blue-800'
+            }`}>
+              {trayState}
+            </span>
           </div>
           <div className="text-xl font-extrabold text-slate-900 tracking-tight pl-1">
-            {trayPosition >= 90 ? 'In Cooling Chamber' : trayPosition <= 10 ? 'Extended Outside' : 'Moving...'}
+            {trayPosition >= 90 ? 'Docked in Cold' : trayPosition <= 10 ? 'Extended Ambient' : 'Moving Rails...'}
           </div>
           <div className="mt-2 pl-1 space-y-1.5">
-            <div className="text-[11px] font-medium text-emerald-600 flex items-center gap-1.5">
-              <span className={`w-2 h-2 rounded-full ${isTrayMoving ? 'bg-amber-500 animate-ping' : 'bg-emerald-500'}`}></span>
-              <span>{isTrayMoving ? `Actuator Running (${motorCurrentMa}mA)` : 'Motor Idle / Locked'}</span>
+            <div className="flex items-center justify-between text-[11px] font-mono text-slate-500">
+              <span>LS1: {trayPosition <= 5 ? 'CLOSED' : 'OPEN'}</span>
+              <span>LS2: {trayPosition >= 95 ? 'CLOSED' : 'OPEN'}</span>
+              <strong className="text-blue-700">{Math.round(trayPosition)}%</strong>
             </div>
             <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden p-0.5 border border-slate-200">
               <div
@@ -600,25 +883,25 @@ export default function LiveMonitoringPage() {
 
         {/* Card 5: Gateway Status */}
         <div className="bg-white rounded-xl p-4 border border-slate-200/90 shadow-xs hover:shadow-sm transition-all">
-          <div className="flex items-center gap-2.5 mb-2">
-            <div className="w-9 h-9 rounded-full bg-teal-50 border border-teal-100 flex items-center justify-center text-teal-600">
-              <Wifi className="w-5 h-5 stroke-[2.2]" />
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-full bg-teal-50 border border-teal-100 flex items-center justify-center text-teal-600">
+                <Wifi className="w-5 h-5 stroke-[2.2]" />
+              </div>
+              <div>
+                <div className="text-xs font-semibold text-slate-600">Gateway Link</div>
+                <div className="text-[10px] text-teal-700 font-mono">{dataSource}</div>
+              </div>
             </div>
-            <div className="text-xs font-semibold text-slate-600">Gateway Status</div>
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
           </div>
-          <div className="flex items-center justify-between pl-1">
-            <div className="text-2xl font-bold text-slate-900 tracking-tight">Connected</div>
-            <div className="flex items-end gap-1 h-5">
-              <span className="w-1.5 h-2 rounded-xs bg-emerald-500"></span>
-              <span className="w-1.5 h-3 rounded-xs bg-emerald-500"></span>
-              <span className="w-1.5 h-4 rounded-xs bg-emerald-500"></span>
-              <span className="w-1.5 h-5 rounded-xs bg-emerald-500 animate-pulse"></span>
-            </div>
+          <div className="text-2xl font-bold text-slate-900 tracking-tight pl-1">
+            Connected
           </div>
           <div className="text-[11px] font-medium text-slate-500 mt-2 pl-1 flex items-center justify-between">
-            <span>Last Packet: <strong className="font-mono text-slate-700">&lt;1s ago</strong></span>
+            <span>Packets: <strong className="font-mono text-slate-700">{packetsCount} rx</strong></span>
             <span className="font-mono text-[10px] text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded border border-teal-200">
-              {packetsCount} rx
+              {batteryPct}% batt
             </span>
           </div>
         </div>
@@ -638,6 +921,9 @@ export default function LiveMonitoringPage() {
                 📍 Live Package Location Tracker
               </span>
               <span className={`w-2 h-2 rounded-full ${pkgLoc.dot} animate-ping`}></span>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/70 border border-current font-bold">
+                DATA: {dataSource}
+              </span>
             </div>
             <h3 className="text-base font-extrabold text-slate-900 mt-0.5">
               {pkgLoc.label}
@@ -650,19 +936,18 @@ export default function LiveMonitoringPage() {
 
         {/* Live Coordinate Badges */}
         <div className="flex items-center gap-2 text-xs font-mono bg-white/90 px-3 py-1.5 rounded-lg border border-slate-200 shadow-2xs shrink-0">
+          <span className="text-slate-500">STATE:</span>
+          <strong className="text-blue-700">{trayState}</strong>
+          <span className="text-slate-300">|</span>
           <span className="text-slate-500">CARRIAGE:</span>
-          <strong className="text-blue-700">{Math.round(trayPosition)}%</strong>
+          <strong className="text-slate-900">{Math.round(trayPosition)}%</strong>
           <span className="text-slate-300">|</span>
-          <span className="text-slate-500">LINEAR X:</span>
-          <strong className="text-slate-900">{Math.round(trayPosition * 3.4)} mm</strong>
-          <span className="text-slate-300">|</span>
-          <span className="text-slate-500">PAYLOAD TEMP:</span>
+          <span className="text-slate-500">PAYLOAD:</span>
           <strong className={packageTemp > 8.0 ? 'text-red-600 font-extrabold' : 'text-emerald-700'}>
             {packageTemp.toFixed(1)}°C
           </strong>
         </div>
       </div>
-
 
       {/* ========================================================================= */}
       {/* 4. MIDDLE SECTION: PHYSICAL RIG STAGE + TREND CHART                       */}
@@ -723,9 +1008,9 @@ export default function LiveMonitoringPage() {
                   <span>Simulate Excursion</span>
                 </button>
 
-                {/* Toggle Tray Position */}
+                {/* Manual Override Tray Buttons */}
                 <button
-                  onClick={toggleTrayTarget}
+                  onClick={() => handleManualOverride(trayTarget === 100 ? 0 : 100)}
                   className="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 transition-all flex items-center gap-1.5 active:scale-95"
                 >
                   <Sliders className="w-3.5 h-3.5 text-slate-600" />
@@ -917,7 +1202,7 @@ export default function LiveMonitoringPage() {
                       ? 'bg-amber-950 text-amber-300 border border-amber-800 animate-pulse'
                       : 'bg-slate-800 text-slate-300 border border-slate-700'
                   }`}>
-                    STATE: {trayPosition >= 90 ? 'INSIDE COLD COMPARTMENT (+ COLD PACK)' : isTrayMoving ? 'TRANSIT ALONG RAIL' : 'EXTENDED IN AMBIENT'}
+                    STATE: {trayState}
                   </span>
                   <span className="text-[11px] text-slate-400">
                     Pos: <strong className="text-white font-mono">{Math.round(trayPosition)}%</strong>
@@ -1133,7 +1418,7 @@ export default function LiveMonitoringPage() {
                     </div>
                   </div>
                   <div>
-                    <div className="text-[11px] font-semibold text-slate-500">Predicted (30 sec)</div>
+                    <div className="text-[11px] font-semibold text-slate-500">Predicted ({forecastHorizon})</div>
                     <div className={`text-xl font-black font-mono transition-colors ${
                       predictedTemp >= 8.0 ? 'text-red-600 animate-pulse' : 'text-emerald-600'
                     }`}>
@@ -1142,7 +1427,7 @@ export default function LiveMonitoringPage() {
                   </div>
                   <div>
                     <div className="text-[11px] font-semibold text-slate-500">Limit Boundary</div>
-                    <div className="text-sm font-bold text-slate-800 font-mono">{tempLimit.toFixed(1)} °C</div>
+                    <div className="text-sm font-bold text-slate-800 font-mono">{tempMaxLimit.toFixed(1)} °C</div>
                   </div>
                 </div>
 
@@ -1184,7 +1469,7 @@ export default function LiveMonitoringPage() {
       {/* 5. DETAILED HARDWARE STATUS TABLE & LIVE EVENT FEED                       */}
       {/* ========================================================================= */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Column 1: Detailed Hardware Status (All 8 Modules from User Diagram) */}
+        {/* Column 1: Detailed Hardware Status (All 8 Modules from User Architecture) */}
         <div className="bg-white rounded-xl border border-slate-200/90 shadow-xs p-5">
           <div className="flex items-center justify-between pb-3 mb-2 border-b border-slate-100">
             <div className="flex items-center gap-2">
@@ -1205,12 +1490,12 @@ export default function LiveMonitoringPage() {
             <div className="py-2 flex items-center justify-between">
               <div>
                 <span className="font-bold text-slate-800 block">KKM K6 Beacon (On Package)</span>
-                <span className="text-[10px] text-slate-400 font-mono">BLE 5.0 Advert | Batt: 98%</span>
+                <span className="text-[10px] text-slate-400 font-mono">BLE 5.0 Advert | Batt: {batteryPct}%</span>
               </div>
               <span className={`text-[11px] font-mono font-bold px-2 py-0.5 rounded ${
                 activeHwStage === 'BEACON' ? 'bg-blue-100 text-blue-800 animate-pulse' : 'text-emerald-700 bg-emerald-50'
               }`}>
-                {activeHwStage === 'BEACON' ? '● BROADCASTING' : 'ONLINE (-58dBm)'}
+                {activeHwStage === 'BEACON' ? '● BROADCASTING' : `ONLINE (${rssiDbm}dBm)`}
               </span>
             </div>
 
@@ -1270,7 +1555,7 @@ export default function LiveMonitoringPage() {
             <div className="py-2 flex items-center justify-between">
               <div>
                 <span className="font-bold text-slate-800 block">Limit Switches (LS1, LS2)</span>
-                <span className="text-[10px] text-slate-400 font-mono">Position Feedback Feedback Loop</span>
+                <span className="text-[10px] text-slate-400 font-mono">Position Feedback Loop</span>
               </div>
               <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded text-emerald-700 bg-emerald-50">
                 {trayPosition >= 95 ? 'LS2 CLOSED (100%)' : trayPosition <= 5 ? 'LS1 CLOSED (0%)' : 'BETWEEN STOPS'}

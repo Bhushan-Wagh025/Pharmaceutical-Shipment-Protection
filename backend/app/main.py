@@ -45,14 +45,35 @@ app.add_middleware(
 # Include API v1 router
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
+from fastapi import Depends, HTTPException
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+from app.database import get_db
+
 @app.get("/health")
 @app.get("/api/v1/health")
-def health_check():
+def health_check(db: Session = Depends(get_db)):
+    db_status = "connected"
+    try:
+        db.execute(text("SELECT 1"))
+    except Exception as e:
+        db_status = f"unhealthy: {e}"
+
     return {
-        "status": "healthy",
+        "status": "healthy" if db_status == "connected" else "degraded",
         "service": settings.PROJECT_NAME,
-        "version": settings.VERSION
+        "version": settings.VERSION,
+        "database": db_status
     }
+
+@app.get("/ready")
+@app.get("/api/v1/ready")
+def readiness_check(db: Session = Depends(get_db)):
+    try:
+        db.execute(text("SELECT 1"))
+        return {"status": "ready", "database_connected": True}
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Database not ready: {e}")
 
 # Real-time WebSocket endpoints
 @app.websocket("/ws/shipments/{shipment_id}")

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { api } from '@/lib/api';
 import { Wifi, Plus, RotateCw, Server } from 'lucide-react';
 
@@ -34,12 +35,22 @@ export default function GatewaysPage() {
             Hardware gateway adapters for GAO BLE receivers and simulated edge nodes.
           </p>
         </div>
-        <button
-          onClick={loadGateways}
-          className="p-1.5 rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-600"
-        >
-          <RotateCw className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/settings/gateways"
+            className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-2xs transition-colors"
+          >
+            <Server className="w-3.5 h-3.5" />
+            <span>Configure Gateway</span>
+          </Link>
+          <button
+            onClick={loadGateways}
+            className="p-1.5 rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-600"
+            title="Refresh list"
+          >
+            <RotateCw className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       <div className="bg-white rounded-lg border border-slate-200 shadow-xs overflow-hidden">

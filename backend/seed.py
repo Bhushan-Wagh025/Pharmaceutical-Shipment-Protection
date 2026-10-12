@@ -111,12 +111,29 @@ def seed_database():
                 gateway_eui="GW-COLD-8842-A1",
                 name="GAO Industrial Cold-Chain Gateway #1",
                 ip_address="192.168.10.45",
+                host_url="http://192.168.10.45:8080",
+                api_base_path="/api/v1",
+                auth_method="NONE",
+                polling_interval=5,
+                timeout_seconds=5,
+                is_enabled=True,
+                verify_ssl=True,
+                adapter_type="GAO_BLE",
                 status=GatewayStatus.ONLINE,
-                last_seen_at=datetime.utcnow()
+                last_seen_at=datetime.utcnow(),
+                last_communication_at=datetime.utcnow()
             )
             db.add(gateway)
             db.commit()
             db.refresh(gateway)
+        else:
+            if not gateway.host_url:
+                gateway.host_url = "http://192.168.10.45:8080"
+                gateway.api_base_path = "/api/v1"
+                gateway.polling_interval = 5
+                gateway.timeout_seconds = 5
+                gateway.adapter_type = "GAO_BLE"
+                db.commit()
 
         # 6. Create BLE Device
         ble_dev = db.query(BLEDevice).filter(BLEDevice.device_mac == "CC:50:E3:88:42:01").first()
