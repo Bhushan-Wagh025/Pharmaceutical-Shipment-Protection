@@ -21,7 +21,7 @@ from app.services.ai_forecast_service import AITemperatureForecaster
 
 logger = logging.getLogger("pharma.seed")
 
-def seed_database():
+def seed_database(include_samples: bool = False):
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
@@ -166,107 +166,108 @@ def seed_database():
             db.commit()
             db.refresh(tray)
 
-        # 8. Create Demo Shipment
-        shipment = db.query(Shipment).filter(Shipment.shipment_code == "SHP-2026-001").first()
-        if not shipment:
-            shipment = Shipment(
-                shipment_code="SHP-2026-001",
-                package_id="PKG-mRNA-892",
-                company_id=company.id,
-                product_name="mRNA Vaccine BNT162b2 (Ultra-Sensitive)",
-                batch_number="LOT-2026-9948",
-                customer_name="Novartis Healthcare / Charité Hospital",
-                origin="Basel Cold Hub, Switzerland",
-                destination="Berlin Central Hospital, Germany",
-                temp_limit=8.0,
-                temp_safe_min=2.0,
-                forecast_horizon_minutes=15,
-                status=ShipmentStatus.NORMAL,
-                risk_level=RiskLevel.LOW.value,
-                ble_device_id=ble_dev.id,
-                tray_id=tray.id
-            )
-            db.add(shipment)
-            db.commit()
-            db.refresh(shipment)
+        # 8. Create Demo Shipment (Only in explicit sample/simulator mode, never automatically in production)
+        if include_samples:
+            shipment = db.query(Shipment).filter(Shipment.shipment_code == "SHP-2026-001").first()
+            if not shipment:
+                shipment = Shipment(
+                    shipment_code="SHP-2026-001",
+                    package_id="PKG-mRNA-892",
+                    company_id=company.id,
+                    product_name="mRNA Vaccine BNT162b2 (Ultra-Sensitive)",
+                    batch_number="LOT-2026-9948",
+                    customer_name="Novartis Healthcare / Charité Hospital",
+                    origin="Basel Cold Hub, Switzerland",
+                    destination="Berlin Central Hospital, Germany",
+                    temp_limit=8.0,
+                    temp_safe_min=2.0,
+                    forecast_horizon_minutes=15,
+                    status=ShipmentStatus.NORMAL,
+                    risk_level=RiskLevel.LOW.value,
+                    ble_device_id=ble_dev.id,
+                    tray_id=tray.id
+                )
+                db.add(shipment)
+                db.commit()
+                db.refresh(shipment)
 
-            # Add initial telemetry readings (safe 5.4°C - 5.5°C)
-            now = datetime.utcnow()
-            baseline_temps = [5.40, 5.43, 5.46, 5.48, 5.50, 5.52]
-            for i, t in enumerate(baseline_temps):
-                db.add(TemperatureReading(
-                    shipment_id=shipment.id,
-                    device_id=ble_dev.id,
-                    temperature=t,
-                    battery=98.5,
-                    humidity=42.0,
-                    signal_rssi=-64,
-                    timestamp=now - timedelta(minutes=(len(baseline_temps) - i) * 2)
-                ))
-            db.commit()
+                # Add initial telemetry readings (safe 5.4°C - 5.5°C)
+                now = datetime.utcnow()
+                baseline_temps = [5.40, 5.43, 5.46, 5.48, 5.50, 5.52]
+                for i, t in enumerate(baseline_temps):
+                    db.add(TemperatureReading(
+                        shipment_id=shipment.id,
+                        device_id=ble_dev.id,
+                        temperature=t,
+                        battery=98.5,
+                        humidity=42.0,
+                        signal_rssi=-64,
+                        timestamp=now - timedelta(minutes=(len(baseline_temps) - i) * 2)
+                    ))
+                db.commit()
 
-            # Compute initial forecast
-            forecast_data = AITemperatureForecaster.forecast_shipment_temperature(db, shipment)
-            if forecast_data:
-                db.add(TemperatureForecast(
-                    shipment_id=shipment.id,
-                    current_temp=forecast_data["current_temp"],
-                    predicted_temp=forecast_data["predicted_temp"],
-                    horizon_minutes=forecast_data["horizon_minutes"],
-                    risk_level=forecast_data["risk_level"],
-                    will_cross_limit=forecast_data["will_cross_limit"],
-                    time_to_cross_seconds=forecast_data["time_to_cross_seconds"],
-                    confidence=forecast_data["confidence"],
-                    slope_c_per_min=forecast_data["slope_c_per_min"],
-                    model_type=forecast_data["model_type"],
-                    timestamp=now
+                # Compute initial forecast
+                forecast_data = AITemperatureForecaster.forecast_shipment_temperature(db, shipment)
+                if forecast_data:
+                    db.add(TemperatureForecast(
+                        shipment_id=shipment.id,
+                        current_temp=forecast_data["current_temp"],
+                        predicted_temp=forecast_data["predicted_temp"],
+                        horizon_minutes=forecast_data["horizon_minutes"],
+                        risk_level=forecast_data["risk_level"],
+                        will_cross_limit=forecast_data["will_cross_limit"],
+                        time_to_cross_seconds=forecast_data["time_to_cross_seconds"],
+                        confidence=forecast_data["confidence"],
+                        slope_c_per_min=forecast_data["slope_c_per_min"],
+                        model_type=forecast_data["model_type"],
+                        timestamp=now
+                    ))
+                    db.commit()
+
+                # Seed system audit entry
+                db.add(AuditLog(
+                    user_email="system@pharmaprotect.io",
+                    action="SYSTEM_INITIALIZATION",
+                    resource_type="SYSTEM",
+                    resource_id="INITIAL_SEED",
+                    details="Initialized BioPharma cold-chain monitoring with demo shipment SHP-2026-001",
+                    timestamp=datetime.utcnow()
                 ))
                 db.commit()
 
-            # Seed system audit entry
-            db.add(AuditLog(
-                user_email="system@pharmaprotect.io",
-                action="SYSTEM_INITIALIZATION",
-                resource_type="SYSTEM",
-                resource_id="INITIAL_SEED",
-                details="Initialized BioPharma cold-chain monitoring with demo shipment SHP-2026-001",
-                timestamp=datetime.utcnow()
-            ))
-            db.commit()
-
-        # Seed 2 additional shipments to showcase full multi-shipment dashboard
-        s2 = db.query(Shipment).filter(Shipment.shipment_code == "SHP-2026-002").first()
-        if not s2:
-            s2 = Shipment(
-                shipment_code="SHP-2026-002",
-                package_id="PKG-INS-441",
-                company_id=company.id,
-                product_name="Recombinant Human Insulin (Glargine)",
-                batch_number="LOT-2026-3312",
-                customer_name="Roche Diagnostics",
-                origin="Frankfurt Cold Facility",
-                destination="Zurich Pharmacy Hub",
-                temp_limit=8.0,
-                temp_safe_min=2.0,
-                forecast_horizon_minutes=15,
-                status=ShipmentStatus.NORMAL,
-                risk_level="LOW",
-                ble_device_id=ble_dev.id,
-                tray_id=tray.id
-            )
-            db.add(s2)
-            db.commit()
-            db.refresh(s2)
-            db.add(TemperatureReading(
-                shipment_id=s2.id,
-                device_id=ble_dev.id,
-                temperature=4.8,
-                battery=96.0,
-                humidity=40.0,
-                signal_rssi=-62,
-                timestamp=datetime.utcnow()
-            ))
-            db.commit()
+            # Seed additional shipment if needed
+            s2 = db.query(Shipment).filter(Shipment.shipment_code == "SHP-2026-002").first()
+            if not s2:
+                s2 = Shipment(
+                    shipment_code="SHP-2026-002",
+                    package_id="PKG-INS-441",
+                    company_id=company.id,
+                    product_name="Recombinant Human Insulin (Glargine)",
+                    batch_number="LOT-2026-3312",
+                    customer_name="Roche Diagnostics",
+                    origin="Frankfurt Cold Facility",
+                    destination="Zurich Pharmacy Hub",
+                    temp_limit=8.0,
+                    temp_safe_min=2.0,
+                    forecast_horizon_minutes=15,
+                    status=ShipmentStatus.NORMAL,
+                    risk_level="LOW",
+                    ble_device_id=ble_dev.id,
+                    tray_id=tray.id
+                )
+                db.add(s2)
+                db.commit()
+                db.refresh(s2)
+                db.add(TemperatureReading(
+                    shipment_id=s2.id,
+                    device_id=ble_dev.id,
+                    temperature=4.8,
+                    battery=96.0,
+                    humidity=40.0,
+                    signal_rssi=-62,
+                    timestamp=datetime.utcnow()
+                ))
+                db.commit()
 
         logger.info("Database seeding successfully verified.")
     except Exception as e:

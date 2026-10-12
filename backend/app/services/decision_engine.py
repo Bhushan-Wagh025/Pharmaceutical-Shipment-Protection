@@ -37,9 +37,22 @@ class DecisionEngine:
         Suspends actuation if sensor telemetry is stale.
         """
         temp_limit = shipment.temp_limit
-        predicted_temp = forecast.get("predicted_temp", current_temp) if forecast else current_temp
-        risk_level = forecast.get("risk_level", "LOW") if forecast else "LOW"
-        will_cross_limit = forecast.get("will_cross_limit", False) if forecast else False
+        if forecast:
+            predicted_temp = forecast.get("predicted_temp")
+            risk_level = forecast.get("risk_level", RiskLevel.LOW.value)
+            will_cross_limit = forecast.get("will_cross_limit", False)
+        else:
+            predicted_temp = None
+            will_cross_limit = False
+            # Generate risk states strictly from defined business rules and actual measurements
+            if current_temp >= temp_limit:
+                risk_level = RiskLevel.CRITICAL.value
+            elif current_temp >= (temp_limit - 0.5):
+                risk_level = RiskLevel.HIGH.value
+            elif current_temp >= (temp_limit - 1.0):
+                risk_level = RiskLevel.MEDIUM.value
+            else:
+                risk_level = RiskLevel.LOW.value
         horizon = shipment.forecast_horizon_minutes
 
         tray = shipment.tray
@@ -60,7 +73,7 @@ class DecisionEngine:
                 "decision": "SUSPENDED_STALE_TELEMETRY",
                 "reason": "Sensor telemetry is stale (>5 min old). Automatic physical actuation suspended.",
                 "threshold": temp_limit,
-                "predicted_temp": round(predicted_temp, 2),
+                "predicted_temp": round(predicted_temp, 2) if predicted_temp is not None else None,
                 "current_temp": round(current_temp, 2),
                 "action_taken": False,
                 "tray_state": tray.state.value if (tray and hasattr(tray.state, 'value')) else (tray.state if tray else "N/A"),
@@ -84,7 +97,7 @@ class DecisionEngine:
         # Imminent excursion predicted or threshold already breached
         should_protect = (
             will_cross_limit or
-            predicted_temp >= temp_limit or
+            (predicted_temp is not None and predicted_temp >= temp_limit) or
             current_temp >= (temp_limit - 0.2) or
             risk_level in [RiskLevel.HIGH.value, RiskLevel.CRITICAL.value]
         )
@@ -93,10 +106,16 @@ class DecisionEngine:
 
         if should_protect and current_tray_state not in [TrayState.PROTECTED, TrayState.MOVING_IN]:
             decision = "TRIGGER_PROTECTION"
-            reason = (
-                f"AI Forecast predicted temperature {predicted_temp:.2f}°C exceeding limit "
-                f"{temp_limit:.1f}°C within {horizon} min horizon (Current: {current_temp:.2f}°C, Risk: {risk_level})."
-            )
+            if predicted_temp is not None:
+                reason = (
+                    f"AI Forecast predicted temperature {predicted_temp:.2f}°C exceeding limit "
+                    f"{temp_limit:.1f}°C within {horizon} min horizon (Current: {current_temp:.2f}°C, Risk: {risk_level})."
+                )
+            else:
+                reason = (
+                    f"Measured temperature {current_temp:.2f}°C near/exceeding threshold "
+                    f"{temp_limit:.1f}°C (Risk: {risk_level})."
+                )
             action_taken = True
 
             # Actuate motorized tray
@@ -123,7 +142,7 @@ class DecisionEngine:
             action_record = ProtectionAction(
                 shipment_id=shipment.id,
                 tray_id=tray.id if tray else None,
-                prediction_temp=round(predicted_temp, 2),
+                prediction_temp=round(predicted_temp, 2) if predicted_temp is not None else round(current_temp, 2),
                 threshold=round(temp_limit, 2),
                 reason=reason,
                 decision=decision,

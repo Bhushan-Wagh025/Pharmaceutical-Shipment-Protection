@@ -19,8 +19,8 @@ async def lifespan(app: FastAPI):
     # Startup: ensure tables exist and seed default accounts & demo data
     logger.info("Initializing B2B Pharmaceutical Protection AIoT Platform...")
     try:
-        seed_database()
-        logger.info("Database initialized and verified.")
+        seed_database(include_samples=False)
+        logger.info("Database essentials initialized and verified.")
     except Exception as e:
         logger.error(f"Error during startup database initialization: {e}")
     yield

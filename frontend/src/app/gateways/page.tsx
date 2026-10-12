@@ -65,22 +65,44 @@ export default function GatewaysPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {gateways.map((g) => (
-              <tr key={g.id} className="hover:bg-slate-50/80">
-                <td className="py-3 px-4 font-mono font-bold text-slate-800">{g.gateway_eui}</td>
-                <td className="py-3 px-4 font-semibold text-slate-900">{g.name}</td>
-                <td className="py-3 px-4 font-mono text-slate-600">{g.ip_address || '192.168.10.45'} (MQTT/HTTP)</td>
-                <td className="py-3 px-4">
-                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5"></span>
-                    ONLINE
-                  </span>
-                </td>
-                <td className="py-3 px-4 text-slate-500 font-mono">
-                  {new Date(g.last_seen_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+            {gateways.map((g) => {
+              const isOnline = g.status === 'ONLINE' || g.status === 'CONNECTED';
+              const isNotConfigured = g.status === 'NOT_CONFIGURED';
+              return (
+                <tr key={g.id} className="hover:bg-slate-50/80">
+                  <td className="py-3 px-4 font-mono font-bold text-slate-800">{g.gateway_eui}</td>
+                  <td className="py-3 px-4 font-semibold text-slate-900">{g.name}</td>
+                  <td className="py-3 px-4 font-mono text-slate-600">
+                    {g.host_url || g.ip_address || 'Unassigned'}
+                  </td>
+                  <td className="py-3 px-4">
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold border ${
+                      isOnline
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : isNotConfigured
+                        ? 'bg-amber-50 text-amber-700 border-amber-200'
+                        : 'bg-slate-100 text-slate-600 border-slate-200'
+                    }`}>
+                      <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${
+                        isOnline ? 'bg-emerald-500' : isNotConfigured ? 'bg-amber-500' : 'bg-slate-400'
+                      }`}></span>
+                      {g.status || 'NOT_CONFIGURED'}
+                    </span>
+                  </td>
+                  <td className="py-3 px-4 text-slate-500 font-mono">
+                    {g.last_seen_at ? new Date(g.last_seen_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'Never'}
+                  </td>
+                </tr>
+              );
+            })}
+            {gateways.length === 0 && (
+              <tr>
+                <td colSpan={5} className="py-12 text-center text-slate-400 text-xs">
+                  <Server className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                  No industrial BLE gateways configured. Click "Configure Gateway" to set up a receiver.
                 </td>
               </tr>
-            ))}
+            )}
           </tbody>
         </table>
       </div>

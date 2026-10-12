@@ -23,9 +23,12 @@ export default function DashboardPage() {
   const [recentAlerts, setRecentAlerts] = useState<any[]>([]);
   const [recentProtections, setRecentProtections] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState<string>('');
+  const [error, setError] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     try {
+      setError(null);
       const [ovData, alertsData, protectionsData] = await Promise.all([
         api.getOverview(),
         api.getAlerts({ limit: 5 }),
@@ -34,8 +37,10 @@ export default function DashboardPage() {
       setOverview(ovData);
       setRecentAlerts(alertsData || []);
       setRecentProtections(protectionsData?.slice(0, 5) || []);
-    } catch (err) {
+      setLastUpdated(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+    } catch (err: any) {
       console.error('Failed to load dashboard data:', err);
+      setError(err?.message || 'Failed to connect to backend API');
     } finally {
       setIsLoading(false);
     }
@@ -60,9 +65,13 @@ export default function DashboardPage() {
           <h1 className="text-xl font-bold tracking-tight text-slate-900">
             Cold-Chain Operations Dashboard
           </h1>
-          <p className="text-xs text-slate-500">
-            Real-time BLE telemetry, scikit-learn AI thermal projection, and motorized protection status.
-          </p>
+          <div className="flex items-center gap-3 mt-1 text-xs text-slate-500">
+            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-medium text-[11px] border border-slate-200">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+              Source: PostgreSQL DB via FastAPI
+            </span>
+            {lastUpdated && <span>Last sync: <strong className="text-slate-700 font-mono">{lastUpdated}</strong></span>}
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -146,9 +155,9 @@ export default function DashboardPage() {
             </thead>
             <tbody className="divide-y divide-slate-100 font-normal">
               {overview?.shipments?.map((s: any) => {
-                const currentTemp = s.current_temperature ?? 5.5;
-                const forecastTemp = s.latest_forecast?.predicted_temp ?? currentTemp;
-                const isOverLimit = currentTemp >= s.temp_limit || forecastTemp >= s.temp_limit;
+                const currentTemp = s.current_temperature !== undefined && s.current_temperature !== null ? s.current_temperature : null;
+                const forecastTemp = s.latest_forecast?.predicted_temp !== undefined && s.latest_forecast?.predicted_temp !== null ? s.latest_forecast.predicted_temp : null;
+                const isOverLimit = (currentTemp !== null && currentTemp >= s.temp_limit) || (forecastTemp !== null && forecastTemp >= s.temp_limit);
 
                 return (
                   <tr key={s.id} className="hover:bg-slate-50/80 transition-colors">
@@ -159,23 +168,31 @@ export default function DashboardPage() {
                       <div className="text-[11px] text-slate-500 truncate max-w-xs">{s.product_name}</div>
                     </td>
                     <td className="py-3 px-4">
-                      <span className={`font-mono text-sm font-bold ${
-                        currentTemp >= s.temp_limit ? 'text-red-600' : 'text-slate-900'
-                      }`}>
-                        {currentTemp.toFixed(2)} °C
-                      </span>
+                      {currentTemp !== null ? (
+                        <span className={`font-mono text-sm font-bold ${
+                          currentTemp >= s.temp_limit ? 'text-red-600' : 'text-slate-900'
+                        }`}>
+                          {currentTemp.toFixed(2)} °C
+                        </span>
+                      ) : (
+                        <span className="font-mono text-xs text-slate-400">--</span>
+                      )}
                     </td>
                     <td className="py-3 px-4">
                       <span className="font-mono text-xs text-slate-600">{s.temp_limit.toFixed(1)} °C</span>
                     </td>
                     <td className="py-3 px-4">
-                      <div className="flex items-center gap-1.5 font-mono">
-                        <TrendingUp className={`w-3.5 h-3.5 ${isOverLimit ? 'text-red-500' : 'text-slate-400'}`} />
-                        <span className={`font-semibold ${isOverLimit ? 'text-red-600 font-bold' : 'text-slate-800'}`}>
-                          {forecastTemp.toFixed(2)} °C
-                        </span>
-                        <span className="text-[10px] text-slate-400 font-sans">(15m)</span>
-                      </div>
+                      {forecastTemp !== null ? (
+                        <div className="flex items-center gap-1.5 font-mono">
+                          <TrendingUp className={`w-3.5 h-3.5 ${isOverLimit ? 'text-red-500' : 'text-slate-400'}`} />
+                          <span className={`font-semibold ${isOverLimit ? 'text-red-600 font-bold' : 'text-slate-800'}`}>
+                            {forecastTemp.toFixed(2)} °C
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-sans">(15m)</span>
+                        </div>
+                      ) : (
+                        <span className="text-slate-400 text-xs italic">Unavailable</span>
+                      )}
                     </td>
                     <td className="py-3 px-4">
                       <RiskBadge risk={s.risk_level} />
@@ -199,8 +216,9 @@ export default function DashboardPage() {
               })}
               {(!overview?.shipments || overview.shipments.length === 0) && (
                 <tr>
-                  <td colSpan={8} className="py-8 text-center text-slate-400 text-xs">
-                    No active shipments registered.
+                  <td colSpan={8} className="py-12 text-center text-slate-400 text-xs">
+                    <Package className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                    No active consignments found in database.
                   </td>
                 </tr>
               )}

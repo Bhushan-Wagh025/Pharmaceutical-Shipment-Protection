@@ -15,7 +15,7 @@ def get_gateway_adapter(gateway: Gateway) -> BaseGatewayAdapter:
     api_key = decrypt_credential(gateway.api_key_encrypted) if gateway.api_key_encrypted else None
     
     return GAOBLEGatewayAdapter(
-        host_url=gateway.host_url or gateway.ip_address or "http://192.168.10.45",
+        host_url=gateway.host_url or gateway.ip_address or "",
         api_base_path=gateway.api_base_path or "/api/v1",
         auth_method=gateway.auth_method or "NONE",
         api_key=api_key,

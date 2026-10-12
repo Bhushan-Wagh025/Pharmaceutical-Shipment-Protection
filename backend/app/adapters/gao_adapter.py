@@ -18,7 +18,7 @@ class GAOBLEGatewayAdapter(BaseGatewayAdapter):
 
     def __init__(
         self,
-        host_url: str = "http://192.168.10.45",
+        host_url: str = "",
         api_base_path: str = "/api/v1",
         auth_method: str = "NONE",
         api_key: Optional[str] = None,
@@ -146,6 +146,8 @@ class GAOBLEGatewayAdapter(BaseGatewayAdapter):
 
     def discover_devices(self) -> List[Dict[str, Any]]:
         """Queries the gateway for detected BLE beacons and parses the telemetry."""
+        if not self.host_url:
+            return []
         is_safe, _ = validate_gateway_url(self.host_url)
         if not is_safe:
             return []
@@ -176,6 +178,8 @@ class GAOBLEGatewayAdapter(BaseGatewayAdapter):
 
     def fetch_telemetry(self) -> List[Dict[str, Any]]:
         """Fetches live telemetry readings from the gateway."""
+        if not self.host_url:
+            return []
         is_safe, _ = validate_gateway_url(self.host_url)
         if not is_safe:
             return []
@@ -207,6 +211,15 @@ class GAOBLEGatewayAdapter(BaseGatewayAdapter):
         return []
 
     def get_status(self) -> Dict[str, Any]:
+        if not self.host_url:
+            return {
+                "connected": False,
+                "status": "NOT_CONFIGURED",
+                "last_communication": None,
+                "active_devices_count": 0,
+                "error": "HOST_NOT_CONFIGURED",
+                "troubleshooting": "Configure the BLE gateway host URL in Gateway Settings."
+            }
         return {
             "connected": self._is_connected,
             "status": "CONNECTED" if self._is_connected else ("ERROR" if self._last_error else "DISCONNECTED"),

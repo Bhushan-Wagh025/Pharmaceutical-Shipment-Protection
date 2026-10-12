@@ -100,6 +100,14 @@ export default function AuditLogsPage() {
                 </td>
               </tr>
             ))}
+            {filtered.length === 0 && (
+              <tr>
+                <td colSpan={5} className="py-12 text-center text-slate-400 text-xs">
+                  <Shield className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                  No audit log entries recorded.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>

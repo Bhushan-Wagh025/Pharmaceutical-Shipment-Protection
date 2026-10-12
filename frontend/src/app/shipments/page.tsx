@@ -13,16 +13,16 @@ export default function ShipmentsListPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
 
-  // New Shipment Form State
+  // New Shipment Form State (Clean empty state, no pre-filled fake data)
   const [formData, setFormData] = useState({
-    shipment_code: 'SHP-2026-003',
-    package_id: 'PKG-VAX-771',
+    shipment_code: '',
+    package_id: '',
     company_id: 1,
-    product_name: 'Varicella Zoster Live Vaccine',
-    batch_number: 'LOT-2026-1188',
-    customer_name: 'Geneva University Hospital',
-    origin: 'Basel Cold Storage Hub',
-    destination: 'Geneva Regional Depot',
+    product_name: '',
+    batch_number: '',
+    customer_name: '',
+    origin: '',
+    destination: '',
     temp_limit: 8.0,
     temp_safe_min: 2.0,
     forecast_horizon_minutes: 15,
@@ -204,6 +204,7 @@ export default function ShipmentsListPage() {
                   <input
                     type="text"
                     required
+                    placeholder="e.g. SHP-2026-001"
                     value={formData.shipment_code}
                     onChange={(e) => setFormData({ ...formData, shipment_code: e.target.value })}
                     className="w-full px-2.5 py-1.5 border border-slate-300 rounded bg-white text-xs font-mono"
@@ -214,6 +215,7 @@ export default function ShipmentsListPage() {
                   <input
                     type="text"
                     required
+                    placeholder="e.g. PKG-mRNA-892"
                     value={formData.package_id}
                     onChange={(e) => setFormData({ ...formData, package_id: e.target.value })}
                     className="w-full px-2.5 py-1.5 border border-slate-300 rounded bg-white text-xs font-mono"
@@ -226,6 +228,7 @@ export default function ShipmentsListPage() {
                 <input
                   type="text"
                   required
+                  placeholder="e.g. mRNA Vaccine BNT162b2 (Ultra-Sensitive)"
                   value={formData.product_name}
                   onChange={(e) => setFormData({ ...formData, product_name: e.target.value })}
                   className="w-full px-2.5 py-1.5 border border-slate-300 rounded bg-white text-xs"
@@ -238,6 +241,7 @@ export default function ShipmentsListPage() {
                   <input
                     type="text"
                     required
+                    placeholder="e.g. LOT-2026-9948"
                     value={formData.batch_number}
                     onChange={(e) => setFormData({ ...formData, batch_number: e.target.value })}
                     className="w-full px-2.5 py-1.5 border border-slate-300 rounded bg-white text-xs"
@@ -248,6 +252,7 @@ export default function ShipmentsListPage() {
                   <input
                     type="text"
                     required
+                    placeholder="e.g. Novartis Healthcare / Hospital"
                     value={formData.customer_name}
                     onChange={(e) => setFormData({ ...formData, customer_name: e.target.value })}
                     className="w-full px-2.5 py-1.5 border border-slate-300 rounded bg-white text-xs"

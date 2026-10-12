@@ -91,13 +91,13 @@ export default function ShipmentDetailPage() {
     }
   });
 
-  const currentTemp = shipment?.current_temperature ?? (history.length > 0 ? history[history.length - 1].temperature : 5.5);
+  const currentTemp = shipment?.current_temperature ?? (history.length > 0 ? history[history.length - 1].temperature : null);
   const tempLimit = shipment?.temp_limit ?? 8.0;
-  const forecastTemp = latestForecast?.predicted_temp ?? currentTemp;
+  const forecastTemp = latestForecast?.predicted_temp ?? null;
   const horizon = shipment?.forecast_horizon_minutes ?? 15;
   const trayState = shipment?.tray?.state ?? 'EXTENDED';
   const trayPosition = shipment?.tray?.position_percentage ?? 0;
-  const isExcursionImminent = currentTemp >= tempLimit || forecastTemp >= tempLimit;
+  const isExcursionImminent = (currentTemp !== null && currentTemp >= tempLimit) || (forecastTemp !== null && forecastTemp >= tempLimit);
 
   return (
     <div className="space-y-6">
@@ -147,9 +147,9 @@ export default function ShipmentDetailPage() {
       <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
         <MetricCard
           title="Current Temp"
-          value={`${currentTemp.toFixed(2)} °C`}
+          value={currentTemp !== null ? `${currentTemp.toFixed(2)} °C` : '--'}
           subtitle={`Limit: ${tempLimit.toFixed(1)} °C`}
-          alert={currentTemp >= tempLimit}
+          alert={currentTemp !== null && currentTemp >= tempLimit}
           icon={<Thermometer className="w-4 h-4 text-brand-600" />}
         />
         <MetricCard
@@ -160,9 +160,9 @@ export default function ShipmentDetailPage() {
         />
         <MetricCard
           title="AI Forecast"
-          value={`${forecastTemp.toFixed(2)} °C`}
-          subtitle={`Trajectory at +${horizon}m`}
-          alert={forecastTemp >= tempLimit}
+          value={forecastTemp !== null ? `${forecastTemp.toFixed(2)} °C` : 'Unavailable'}
+          subtitle={forecastTemp !== null ? `Trajectory at +${horizon}m` : 'No forecast available'}
+          alert={forecastTemp !== null && forecastTemp >= tempLimit}
           icon={<TrendingUp className="w-4 h-4 text-purple-600" />}
         />
         <MetricCard
@@ -190,7 +190,7 @@ export default function ShipmentDetailPage() {
       <SimulatorControlPanel
         shipmentId={shipmentId}
         trayId={shipment?.tray?.id || 1}
-        currentTemp={currentTemp}
+        currentTemp={currentTemp ?? 5.0}
         trayState={trayState}
         trayPosition={trayPosition}
         onActionComplete={loadShipmentData}
@@ -265,27 +265,27 @@ export default function ShipmentDetailPage() {
           <div className="grid grid-cols-2 gap-2 text-slate-600">
             <div>
               <span className="font-semibold text-slate-800 block">Package ID:</span>
-              <span className="font-mono">{shipment?.package_id || 'PKG-mRNA-892'}</span>
+              <span className="font-mono">{shipment?.package_id || 'Not Assigned'}</span>
             </div>
             <div>
               <span className="font-semibold text-slate-800 block">Batch / Lot:</span>
-              <span className="font-mono">{shipment?.batch_number || 'LOT-2026-9948'}</span>
+              <span className="font-mono">{shipment?.batch_number || '—'}</span>
             </div>
             <div>
               <span className="font-semibold text-slate-800 block">Origin:</span>
-              <span>{shipment?.origin}</span>
+              <span>{shipment?.origin || '—'}</span>
             </div>
             <div>
               <span className="font-semibold text-slate-800 block">Destination:</span>
-              <span>{shipment?.destination}</span>
+              <span>{shipment?.destination || '—'}</span>
             </div>
             <div>
               <span className="font-semibold text-slate-800 block">BLE Tag MAC:</span>
-              <span className="font-mono">{shipment?.ble_device?.device_mac || 'CC:50:E3:88:42:01'}</span>
+              <span className="font-mono">{shipment?.ble_device?.device_mac || 'Unpaired'}</span>
             </div>
             <div>
               <span className="font-semibold text-slate-800 block">Assigned Tray Unit:</span>
-              <span className="font-mono">{shipment?.tray?.tray_code || 'TRAY-UNIT-A1'}</span>
+              <span className="font-mono">{shipment?.tray?.tray_code || 'Unassigned'}</span>
             </div>
           </div>
         </div>

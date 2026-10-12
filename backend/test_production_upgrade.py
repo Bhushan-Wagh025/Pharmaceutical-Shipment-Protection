@@ -277,5 +277,76 @@ class TestProductionUpgrade(unittest.TestCase):
         actions = [log["action"] for log in logs]
         self.assertTrue(any("GATEWAY" in a or "TRAY" in a for a in actions))
 
+    # --------------------------------------------------------------------------
+    # 11. Zero Data Fabrication: Unconfigured Gateway
+    # --------------------------------------------------------------------------
+    def test_11_unconfigured_gateway_returns_not_configured_no_fake_readings(self):
+        unconfigured_adapter = GAOBLEGatewayAdapter(host_url="")
+        status = unconfigured_adapter.get_status()
+        self.assertEqual(status["status"], "NOT_CONFIGURED")
+        self.assertFalse(status["connected"])
+        self.assertEqual(status["error"], "HOST_NOT_CONFIGURED")
+
+        # Discovering devices or fetching telemetry from unconfigured adapter must yield empty list, NEVER fake devices
+        devices = unconfigured_adapter.discover_devices()
+        self.assertEqual(devices, [])
+        telemetry = unconfigured_adapter.fetch_telemetry()
+        self.assertEqual(telemetry, [])
+
+        conn_test = unconfigured_adapter.test_connection()
+        self.assertFalse(conn_test["success"])
+        self.assertEqual(conn_test["error"], "HOST_NOT_CONFIGURED")
+
+    # --------------------------------------------------------------------------
+    # 12. Zero Data Fabrication: AI Forecast on Insufficient Telemetry
+    # --------------------------------------------------------------------------
+    def test_12_insufficient_readings_never_fabricates_prediction_or_confidence(self):
+        from app.database import SessionLocal
+        from app.models.logistics import Shipment
+        from app.services.ai_forecast_service import AITemperatureForecaster
+
+        db = SessionLocal()
+        try:
+            # Create a test consignment with NO sensor readings
+            test_code = f"TEST-NOREAD-{uuid.uuid4().hex[:6]}"
+            shp = Shipment(
+                shipment_code=test_code,
+                package_id=f"PKG-{uuid.uuid4().hex[:4]}",
+                company_id=self.company_id,
+                product_name="Zero-Fabrication Verification Sample",
+                batch_number="TEST-BATCH",
+                customer_name="QA Testing Lab",
+                origin="Basel Cold Storage Hub Alpha",
+                destination="Zurich Pharmacy Hub",
+                temp_limit=8.0,
+                temp_safe_min=2.0,
+                forecast_horizon_minutes=15
+            )
+            db.add(shp)
+            db.commit()
+            db.refresh(shp)
+
+            # Forecasting must return None, not fake confidence 0.50 or fake slope
+            forecast = AITemperatureForecaster.forecast_shipment_temperature(db, shp)
+            self.assertIsNone(forecast, "Forecaster must return None when readings < 3, never fabricated numbers!")
+
+            # Endpoint must return 400 Insufficient data rather than fabricated prediction
+            run_res = client.post(f"/api/v1/forecast/{shp.id}/run", headers=self.headers)
+            self.assertEqual(run_res.status_code, 400)
+            self.assertIn("Insufficient", run_res.json()["detail"])
+        finally:
+            db.close()
+
+    # --------------------------------------------------------------------------
+    # 13. Zero Data Fabrication: Failed Gateway Reachability
+    # --------------------------------------------------------------------------
+    def test_13_failed_gateway_connection_never_generates_fake_status(self):
+        # GAO adapter with non-existent host returns error, never fake packets
+        failing_adapter = GAOBLEGatewayAdapter(host_url="http://192.0.2.1:8080", timeout_seconds=1)
+        res = failing_adapter.test_connection()
+        self.assertFalse(res["success"])
+        self.assertIsNotNone(res["error"])
+        self.assertIn("time", res["error"].lower())
+
 if __name__ == "__main__":
     unittest.main()

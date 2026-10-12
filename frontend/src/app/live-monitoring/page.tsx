@@ -152,22 +152,13 @@ export default function LiveMonitoringPage() {
         if (Array.isArray(data) && data.length > 0) {
           setGateways(data);
           setSelectedGatewayId(data[0].id);
+        } else {
+          setGateways([]);
         }
       })
-      .catch(() => {
-        // Fallback default gateway
-        setGateways([
-          {
-            id: 1,
-            name: 'GAO BLE Gateway #1 (Warehouse A)',
-            gateway_identifier: 'GAO-217030-GW01',
-            host_url: 'http://192.168.1.100:8080',
-            adapter_type: 'gao_ble',
-            status: 'CONNECTED',
-            is_enabled: true,
-            is_monitoring: true,
-          } as any,
-        ]);
+      .catch((err) => {
+        console.warn('Failed to load gateways from backend:', err);
+        setGateways([]);
       });
   }, []);
 
@@ -695,10 +686,23 @@ export default function LiveMonitoringPage() {
                   {gw.name} ({gw.gateway_identifier || gw.adapter_type})
                 </option>
               ))}
+              {gateways.length === 0 && (
+                <option value="">No Gateways Configured</option>
+              )}
             </select>
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800">
-              ● {selectedGateway?.status || 'CONNECTED'}
-            </span>
+            {gateways.length === 0 ? (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-amber-100 text-amber-800 border border-amber-200">
+                ● NOT CONFIGURED
+              </span>
+            ) : (
+              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                selectedGateway?.status === 'ONLINE' || selectedGateway?.status === 'CONNECTED'
+                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                  : 'bg-amber-100 text-amber-800 border border-amber-200'
+              }`}>
+                ● {selectedGateway?.status || 'NOT CONFIGURED'}
+              </span>
+            )}
           </div>
 
           {/* BLE Device Tag */}

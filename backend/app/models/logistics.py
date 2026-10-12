@@ -8,6 +8,7 @@ class GatewayStatus(str, enum.Enum):
     ONLINE = "ONLINE"
     OFFLINE = "OFFLINE"
     MAINTENANCE = "MAINTENANCE"
+    NOT_CONFIGURED = "NOT_CONFIGURED"
 
 class BLEDeviceStatus(str, enum.Enum):
     ONLINE = "ONLINE"
@@ -76,7 +77,7 @@ class Gateway(Base):
     verify_ssl = Column(Boolean, default=True)
     tls_certificate = Column(Text, nullable=True)
     adapter_type = Column(String(50), default="GAO_BLE") # GAO_BLE, SIMULATED
-    status = Column(Enum(GatewayStatus), default=GatewayStatus.ONLINE)
+    status = Column(Enum(GatewayStatus), default=GatewayStatus.NOT_CONFIGURED)
     is_monitoring = Column(Boolean, default=False)
     last_error = Column(Text, nullable=True)
     last_communication_at = Column(DateTime, nullable=True)

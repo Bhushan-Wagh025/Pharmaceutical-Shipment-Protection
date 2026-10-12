@@ -9,9 +9,9 @@ export default function DevicesPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [newDevice, setNewDevice] = useState({
-    device_mac: 'CC:50:E3:88:42:09',
-    name: 'BLE ColdTag Ultra #8029',
-    battery_level: 99.0,
+    device_mac: '',
+    name: '',
+    battery_level: 100.0,
     company_id: 1,
   });
 
@@ -35,6 +35,7 @@ export default function DevicesPage() {
     try {
       await api.createDevice(newDevice);
       setShowModal(false);
+      setNewDevice({ device_mac: '', name: '', battery_level: 100.0, company_id: 1 });
       loadDevices();
     } catch (e: any) {
       alert(e.message);
@@ -81,27 +82,42 @@ export default function DevicesPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {devices.map((d) => (
-              <tr key={d.id} className="hover:bg-slate-50/80">
-                <td className="py-3 px-4 font-mono font-bold text-slate-800">{d.device_mac}</td>
-                <td className="py-3 px-4 font-semibold text-slate-900">{d.name}</td>
-                <td className="py-3 px-4">
-                  <div className="flex items-center gap-1.5 text-slate-700 font-mono">
-                    <Battery className="w-4 h-4 text-emerald-600" />
-                    <span>{d.battery_level}%</span>
-                  </div>
-                </td>
-                <td className="py-3 px-4">
-                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5"></span>
-                    ONLINE
-                  </span>
-                </td>
-                <td className="py-3 px-4 text-slate-500 font-mono">
-                  {new Date(d.last_seen_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+            {devices.map((d) => {
+              const isOnline = d.status === 'ONLINE' || d.status === 'ACTIVE';
+              return (
+                <tr key={d.id} className="hover:bg-slate-50/80">
+                  <td className="py-3 px-4 font-mono font-bold text-slate-800">{d.device_mac}</td>
+                  <td className="py-3 px-4 font-semibold text-slate-900">{d.name}</td>
+                  <td className="py-3 px-4">
+                    <div className="flex items-center gap-1.5 text-slate-700 font-mono">
+                      <Battery className="w-4 h-4 text-emerald-600" />
+                      <span>{d.battery_level}%</span>
+                    </div>
+                  </td>
+                  <td className="py-3 px-4">
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold border ${
+                      isOnline
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : 'bg-slate-100 text-slate-600 border-slate-200'
+                    }`}>
+                      <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${isOnline ? 'bg-emerald-500' : 'bg-slate-400'}`}></span>
+                      {d.status || 'OFFLINE'}
+                    </span>
+                  </td>
+                  <td className="py-3 px-4 text-slate-500 font-mono">
+                    {d.last_seen_at ? new Date(d.last_seen_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'Never'}
+                  </td>
+                </tr>
+              );
+            })}
+            {devices.length === 0 && (
+              <tr>
+                <td colSpan={5} className="py-12 text-center text-slate-400 text-xs">
+                  <Cpu className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                  No BLE thermal sensor tags registered in database.
                 </td>
               </tr>
-            ))}
+            )}
           </tbody>
         </table>
       </div>
@@ -117,6 +133,7 @@ export default function DevicesPage() {
                 <input
                   type="text"
                   required
+                  placeholder="e.g. CC:50:E3:88:42:01"
                   value={newDevice.device_mac}
                   onChange={(e) => setNewDevice({ ...newDevice, device_mac: e.target.value })}
                   className="w-full px-2.5 py-1.5 border border-slate-300 rounded bg-white text-xs font-mono"
@@ -127,6 +144,7 @@ export default function DevicesPage() {
                 <input
                   type="text"
                   required
+                  placeholder="e.g. BLE ColdTag Ultra #8021"
                   value={newDevice.name}
                   onChange={(e) => setNewDevice({ ...newDevice, name: e.target.value })}
                   className="w-full px-2.5 py-1.5 border border-slate-300 rounded bg-white text-xs"

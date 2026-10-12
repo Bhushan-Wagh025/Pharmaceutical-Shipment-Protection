@@ -38,29 +38,9 @@ class AITemperatureForecaster:
         )
 
         if not readings or len(readings) < 3:
-            # Need at least 3 points for meaningful trend modeling
-            # Fall back to latest reading if available
-            latest = (
-                db.query(TemperatureReading)
-                .filter(TemperatureReading.shipment_id == shipment.id)
-                .order_by(TemperatureReading.timestamp.desc())
-                .first()
-            )
-            if not latest:
-                return None
-
-            return {
-                "shipment_id": shipment.id,
-                "current_temp": latest.temperature,
-                "predicted_temp": latest.temperature,
-                "horizon_minutes": shipment.forecast_horizon_minutes,
-                "risk_level": RiskLevel.LOW.value,
-                "will_cross_limit": latest.temperature >= shipment.temp_limit,
-                "time_to_cross_seconds": 0.0 if latest.temperature >= shipment.temp_limit else None,
-                "confidence": 0.50,
-                "slope_c_per_min": 0.0,
-                "model_type": "insufficient_data_fallback",
-            }
+            # Mathematical forecasting requires at least 3 historical readings for valid trajectory calculation.
+            # Never fabricate predictions or confidence scores when insufficient real readings exist.
+            return None
 
         # Convert timestamps and temperatures to numpy arrays
         t0 = readings[0].timestamp
