@@ -640,7 +640,7 @@ export default function LiveMonitoringPage() {
       id: Date.now().toString(),
       time: nowTime,
       type: 'red',
-      message: `Thermal Excursion Injected! KKM K6 Beacon broadcasting rising temp: 7.9°C (Predicted: 8.6°C).`,
+      message: `Thermal Excursion Injected! Aperture Industrial Beacon broadcasting rising temp: 7.9°C (Predicted: 8.6°C).`,
       isNew: true,
     };
     setEvents((prev) => [excursionEvent, ...prev.slice(0, 7)]);
@@ -1395,12 +1395,12 @@ export default function LiveMonitoringPage() {
                         </div>
                       </div>
 
-                      {/* KKM K6 BLE Beacon Tag (Mounted on Package) */}
+                      {/* Aperture Industrial BLE Beacon Tag (Mounted on Package) */}
                       <div className="absolute -top-4 left-1/2 -translate-x-1/2 flex items-center justify-center">
                         <span className="relative flex h-3.5 w-3.5">
                           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
                           <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-cyan-500 items-center justify-center text-[7px] text-black font-extrabold">
-                            K6
+                            AP
                           </span>
                         </span>
                       </div>
@@ -1416,7 +1416,7 @@ export default function LiveMonitoringPage() {
                           <div className="text-[6.5px] font-mono text-blue-700 font-bold">VACCINE 2°C-8°C</div>
                         </div>
                         <div className="flex items-center justify-between text-[6px] font-mono text-slate-500 border-t border-slate-200 pt-0.5">
-                          <span>KKM K6 BEACON</span>
+                          <span>APERTURE BEACON</span>
                           <span>STN-PK4</span>
                         </div>
                       </div>

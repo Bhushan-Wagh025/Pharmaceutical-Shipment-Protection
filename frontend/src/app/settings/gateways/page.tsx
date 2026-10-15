@@ -275,7 +275,7 @@ export default function GatewaySettingsPage() {
       setNotification({
         type: 'error',
         message: `Device Discovery Failed: ${err.message}`,
-        troubleshooting: 'Ensure the BLE gateway is in scanning mode and beacons (KKM K6 / KSensor) are transmitting within RF range.',
+        troubleshooting: 'Ensure the BLE gateway is in scanning mode and beacons (Aperture Industrial Beacon / BLE) are transmitting within RF range.',
       });
     } finally {
       setDiscovering(false);
@@ -818,7 +818,7 @@ export default function GatewaySettingsPage() {
                 <Radio className="w-6 h-6 mx-auto text-slate-300 mb-2" />
                 <p className="font-semibold text-slate-600">No BLE Devices Discovered Yet</p>
                 <p className="text-[11px] text-slate-400 mt-1">
-                  Click <strong>Discover Devices</strong> above to scan for nearby temperature beacons (KKM K6 / KSensor).
+                  Click <strong>Discover Devices</strong> above to scan for nearby temperature beacons (Aperture Industrial Beacon / BLE).
                 </p>
               </div>
             ) : (
