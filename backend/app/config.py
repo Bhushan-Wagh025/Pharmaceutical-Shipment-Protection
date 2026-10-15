@@ -44,6 +44,16 @@ class Settings(BaseSettings):
     GATEWAY_ENCRYPTION_KEY: str = os.getenv("GATEWAY_ENCRYPTION_KEY", "b2b-gateway-secret-enc-key-32ch")
     STALE_TELEMETRY_THRESHOLD_MINUTES: int = 5
     
+    # External Cloud Hardware Simulator & Dummy Data API
+    CLOUD_DUMMY_API_URL: str = os.getenv(
+        "CLOUD_DUMMY_API_URL", 
+        "https://ais-dev-q7bubcyu5drcfwewqploj4-579074576008.asia-southeast1.run.app"
+    )
+    CLOUD_DUMMY_WS_URL: str = os.getenv(
+        "CLOUD_DUMMY_WS_URL",
+        "wss://ais-dev-q7bubcyu5drcfwewqploj4-579074576008.asia-southeast1.run.app/ws/telemetry"
+    )
+    
     class Config:
         case_sensitive = True
         env_file = ".env"

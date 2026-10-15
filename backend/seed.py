@@ -135,7 +135,43 @@ def seed_database(*args, **kwargs):
             gateway.status = GatewayStatus.ONLINE
             db.commit()
 
-        # 6. Create BLE Device
+        # 5b. Create Cloud Run Dummy Data & Virtual Gateway
+        cloud_url = "https://ais-dev-q7bubcyu5drcfwewqploj4-579074576008.asia-southeast1.run.app"
+        cloud_eui = "GW-AIS-RUN-01"
+        cloud_gw = db.query(Gateway).filter(Gateway.gateway_eui == cloud_eui).first()
+        if not cloud_gw:
+            cloud_gw = Gateway(
+                company_id=company.id,
+                station_id=station.id,
+                gateway_eui=cloud_eui,
+                name="Cloud Run Virtual Hardware & Dummy Data Gateway (Asia-SE1)",
+                host_url=cloud_url,
+                api_base_path="/api/v1",
+                auth_method="NONE",
+                polling_interval=3,
+                timeout_seconds=5,
+                is_enabled=True,
+                is_monitoring=True,
+                verify_ssl=False,
+                adapter_type="GAO_BLE",
+                status=GatewayStatus.ONLINE,
+                last_seen_at=datetime.utcnow(),
+                last_communication_at=datetime.utcnow()
+            )
+            db.add(cloud_gw)
+            db.commit()
+            db.refresh(cloud_gw)
+        else:
+            cloud_gw.host_url = cloud_url
+            cloud_gw.api_base_path = "/api/v1"
+            cloud_gw.name = "Cloud Run Virtual Hardware & Dummy Data Gateway (Asia-SE1)"
+            cloud_gw.adapter_type = "GAO_BLE"
+            cloud_gw.is_enabled = True
+            cloud_gw.is_monitoring = True
+            cloud_gw.status = GatewayStatus.ONLINE
+            db.commit()
+
+        # 6. Create BLE Devices
         ble_dev = db.query(BLEDevice).filter(BLEDevice.device_mac == "CC:50:E3:88:42:01").first()
         if not ble_dev:
             ble_dev = BLEDevice(
@@ -149,6 +185,19 @@ def seed_database(*args, **kwargs):
             db.add(ble_dev)
             db.commit()
             db.refresh(ble_dev)
+
+        ble_cloud = db.query(BLEDevice).filter(BLEDevice.device_mac == "PROBE-BLE-T901").first()
+        if not ble_cloud:
+            ble_cloud = BLEDevice(
+                company_id=company.id,
+                device_mac="PROBE-BLE-T901",
+                name="Cloud Run Virtual BLE Sensor #T901",
+                battery_level=89.0,
+                status=BLEDeviceStatus.ONLINE,
+                last_seen_at=datetime.utcnow()
+            )
+            db.add(ble_cloud)
+            db.commit()
 
         # 7. Create Tray
         tray = db.query(Tray).filter(Tray.tray_code == "TRAY-UNIT-A1").first()
