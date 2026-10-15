@@ -75,10 +75,22 @@ export default function DashboardPage() {
                 API Disconnected: {error}
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-medium text-[11px] border border-slate-200">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                Live Database Telemetry Stream
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-medium text-[11px] border border-slate-200">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                  Live Database Telemetry Stream
+                </span>
+                <a 
+                  href="https://ais-dev-q7bubcyu5drcfwewqploj4-579074576008.asia-southeast1.run.app"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-cyan-50 text-cyan-800 font-semibold text-[11px] border border-cyan-200 hover:bg-cyan-100 transition-colors"
+                  title="Virtual Hardware Station & Dummy Data API running on Cloud Run"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse"></span>
+                  <span>Cloud Run Dummy API (Asia-SE1)</span>
+                </a>
+              </div>
             )}
             {lastUpdated && <span>Last sync: <strong className="text-slate-700 font-mono">{lastUpdated}</strong></span>}
           </div>

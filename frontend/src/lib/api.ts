@@ -170,3 +170,68 @@ export const api = {
   simulatorAutoRunStart: (shipmentId: string | number) => fetchWithAuth(`/simulator/auto-run/start/${shipmentId}`, { method: 'POST' }),
   simulatorAutoRunStop: (shipmentId: string | number) => fetchWithAuth(`/simulator/auto-run/stop/${shipmentId}`, { method: 'POST' }),
 };
+
+// =========================================================================
+// Cloud Run Virtual Hardware Simulator & Dummy Data API Client
+// Direct browser access to: https://ais-dev-q7bubcyu5drcfwewqploj4-579074576008.asia-southeast1.run.app
+// =========================================================================
+export const CLOUD_RUN_API_URL = "https://ais-dev-q7bubcyu5drcfwewqploj4-579074576008.asia-southeast1.run.app";
+export const CLOUD_RUN_WS_URL = "wss://ais-dev-q7bubcyu5drcfwewqploj4-579074576008.asia-southeast1.run.app/ws/telemetry";
+
+export const cloudRunApi = {
+  getLatestTelemetry: async () => {
+    const res = await fetch(`${CLOUD_RUN_API_URL}/api/v1/telemetry/latest`, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`Cloud Run API status ${res.status}`);
+    return res.json();
+  },
+  getTelemetryHistory: async (limit = 25) => {
+    const res = await fetch(`${CLOUD_RUN_API_URL}/api/v1/telemetry/history?limit=${limit}`, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`Cloud Run API status ${res.status}`);
+    return res.json();
+  },
+  getStation: async () => {
+    const res = await fetch(`${CLOUD_RUN_API_URL}/api/v1/station`, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`Cloud Run API status ${res.status}`);
+    return res.json();
+  },
+  getGatewayStatus: async () => {
+    const res = await fetch(`${CLOUD_RUN_API_URL}/api/v1/gateway/status`, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`Cloud Run API status ${res.status}`);
+    return res.json();
+  },
+  getDevices: async () => {
+    const res = await fetch(`${CLOUD_RUN_API_URL}/api/v1/gateway/devices`, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`Cloud Run API status ${res.status}`);
+    return res.json();
+  },
+  getTrayStatus: async () => {
+    const res = await fetch(`${CLOUD_RUN_API_URL}/api/v1/tray/status`, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`Cloud Run API status ${res.status}`);
+    return res.json();
+  },
+  moveTrayIn: async () => {
+    const res = await fetch(`${CLOUD_RUN_API_URL}/api/v1/tray/move-in`, { method: 'POST' });
+    if (!res.ok) throw new Error(`Cloud Run API status ${res.status}`);
+    return res.json();
+  },
+  moveTrayOut: async () => {
+    const res = await fetch(`${CLOUD_RUN_API_URL}/api/v1/tray/move-out`, { method: 'POST' });
+    if (!res.ok) throw new Error(`Cloud Run API status ${res.status}`);
+    return res.json();
+  },
+  stopTray: async () => {
+    const res = await fetch(`${CLOUD_RUN_API_URL}/api/v1/tray/stop`, { method: 'POST' });
+    if (!res.ok) throw new Error(`Cloud Run API status ${res.status}`);
+    return res.json();
+  },
+  getSimulatorStatus: async () => {
+    const res = await fetch(`${CLOUD_RUN_API_URL}/api/v1/simulator/status`, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`Cloud Run API status ${res.status}`);
+    return res.json();
+  },
+  resetSimulator: async () => {
+    const res = await fetch(`${CLOUD_RUN_API_URL}/api/v1/simulator/reset`, { method: 'POST' });
+    if (!res.ok) throw new Error(`Cloud Run API status ${res.status}`);
+    return res.json();
+  },
+};

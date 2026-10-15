@@ -20,12 +20,14 @@ def configure_cloud_gateway():
 
         if gw:
             logger.info(f"Updating gateway id={gw.id} ({gw.gateway_eui}) with Cloud Run API URL...")
-            gw.name = "Cloud Run BLE Telemetry Gateway (Asia-SE1)"
+            gw.name = "Cloud Run Virtual Hardware & Dummy Data Gateway (Asia-SE1)"
             gw.host_url = url
             gw.api_base_path = "/api/v1"
-            gw.auth_method = "BEARER_TOKEN"
-            gw.status = GatewayStatus.OFFLINE
-            gw.last_error = "Authentication required (Google Cloud / AI Studio login redirect)"
+            gw.auth_method = "NONE"
+            gw.status = GatewayStatus.ONLINE
+            gw.is_enabled = True
+            gw.is_monitoring = True
+            gw.last_error = None
             db.commit()
             db.refresh(gw)
             logger.info(f"Gateway id={gw.id} successfully updated with host_url={gw.host_url}")
@@ -33,14 +35,16 @@ def configure_cloud_gateway():
             logger.info("Creating new Gateway entity with Cloud Run API URL...")
             new_gw = Gateway(
                 gateway_eui=eui,
-                name="Cloud Run BLE Telemetry Gateway (Asia-SE1)",
+                name="Cloud Run Virtual Hardware & Dummy Data Gateway (Asia-SE1)",
                 host_url=url,
                 api_base_path="/api/v1",
-                auth_method="BEARER_TOKEN",
+                auth_method="NONE",
                 station_id=station_id,
                 adapter_type="GAO_BLE",
-                status=GatewayStatus.OFFLINE,
-                last_error="Authentication required (Google Cloud / AI Studio login redirect)"
+                is_enabled=True,
+                is_monitoring=True,
+                status=GatewayStatus.ONLINE,
+                last_error=None
             )
             db.add(new_gw)
             db.commit()

@@ -36,6 +36,7 @@ import {
   HardDrive,
   Clock,
   ExternalLink,
+  Cloud,
 } from 'lucide-react';
 import {
   LineChart,
@@ -47,7 +48,7 @@ import {
   ResponsiveContainer,
   ReferenceLine,
 } from 'recharts';
-import { api, type Gateway } from '@/lib/api';
+import { api, type Gateway, cloudRunApi, CLOUD_RUN_API_URL } from '@/lib/api';
 import { useShipmentWebSocket } from '@/lib/websocket';
 import type {
   HardwareStageId,
@@ -70,7 +71,7 @@ interface EventItem {
 
 type HardwareStage = HardwareStageId;
 type TrayState = 'EXTENDED' | 'MOVING_IN' | 'PROTECTED' | 'MOVING_OUT' | 'ERROR';
-type DataSourceMode = 'LIVE' | 'SIMULATED';
+type DataSourceMode = 'LIVE' | 'CLOUD_RUN' | 'SIMULATED';
 
 export default function LiveMonitoringPage() {
   // Real-time loop state
@@ -128,6 +129,10 @@ export default function LiveMonitoringPage() {
 
   // 6 Pipeline Steps (1 to 6)
   const [activeStep, setActiveStep] = useState<number>(1);
+
+  // Cloud Run API Dummy Data State
+  const [cloudRunActive, setCloudRunActive] = useState<boolean>(false);
+  const [cloudRunError, setCloudRunError] = useState<string | null>(null);
 
   // Real events & chart data (populated purely from API)
   const [events, setEvents] = useState<EventItem[]>([]);
@@ -246,6 +251,87 @@ export default function LiveMonitoringPage() {
       })
       .catch(() => setShipments([]));
   }, [loadShipmentData]);
+
+  // Cloud Run API Dummy Data Ingestion Loop
+  useEffect(() => {
+    if (dataSource !== 'CLOUD_RUN' || !isPlaying) return;
+
+    let isMounted = true;
+    const fetchCloudRunData = async () => {
+      try {
+        const data = await cloudRunApi.getLatestTelemetry();
+        if (!isMounted) return;
+        setCloudRunActive(true);
+        setCloudRunError(null);
+
+        const tempVal = typeof data.temperature_c === 'number' ? data.temperature_c : (typeof data.temperature === 'number' ? data.temperature : 23.5);
+        const batt = typeof data.battery_percent === 'number' ? data.battery_percent : 89;
+        const rssi = typeof data.signal_rssi_dbm === 'number' ? data.signal_rssi_dbm : -62;
+        const nowStr = new Date().toTimeString().split(' ')[0];
+
+        setPackageTemp(tempVal);
+        setBatteryPct(batt);
+        setRssiDbm(rssi);
+        setLastReceivedTime(`${nowStr} (Cloud Run API)`);
+        setPacketsCount((prev) => prev + 1);
+
+        if (data.tray_state) {
+          setTrayState(data.tray_state);
+          const pos = data.tray_position_percent ?? (data.tray_state === 'PROTECTED' ? 100 : 0);
+          setTrayPosition(pos);
+          setTrayTarget(pos);
+        }
+
+        if (data.ambient_temperature_c) setAmbientTemp(data.ambient_temperature_c);
+        if (data.compartment_temperature_c) setColdTemp(data.compartment_temperature_c);
+
+        if (tempVal >= tempMaxLimit) {
+          setIsBreached(true);
+          setRiskLevel('CRITICAL');
+        } else if (tempVal >= tempMaxLimit - 0.5) {
+          setIsBreached(false);
+          setRiskLevel('ELEVATED');
+        } else {
+          setIsBreached(false);
+          setRiskLevel('NORMAL');
+        }
+
+        setChartData((prev) => {
+          const nextPt: ChartPoint = {
+            time: nowStr.slice(0, 5),
+            packageTemp: Number(tempVal.toFixed(2)),
+            coldTemp: data.compartment_temperature_c ?? 3.8,
+            limit: tempMaxLimit,
+          };
+          const sliced = prev.length > 20 ? prev.slice(1) : prev;
+          return [...sliced, nextPt];
+        });
+
+        // Sync with local backend so AI ML Trajectory & audit log stay updated
+        if (selectedShipmentId) {
+          api.ingestReading({
+            shipment_id: selectedShipmentId,
+            temperature: tempVal,
+            battery: batt,
+            signal_rssi: rssi,
+            humidity: 45.0,
+            data_source: 'SIMULATED',
+            timestamp: new Date().toISOString()
+          }).catch(() => {});
+        }
+      } catch (err: any) {
+        if (!isMounted) return;
+        setCloudRunError(err.message || 'Error fetching Cloud Run API');
+      }
+    };
+
+    fetchCloudRunData();
+    const interval = setInterval(fetchCloudRunData, 2500 / simSpeed);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [dataSource, isPlaying, simSpeed, selectedShipmentId, tempMaxLimit]);
 
   // Web Audio Synth
   const playBeep = useCallback((freq = 880, duration = 0.1, type: OscillatorType = 'sine') => {
@@ -751,6 +837,17 @@ export default function LiveMonitoringPage() {
               <span>LIVE BLE STREAM</span>
             </button>
             <button
+              onClick={() => setDataSource('CLOUD_RUN')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                dataSource === 'CLOUD_RUN'
+                  ? 'bg-cyan-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Cloud className="w-3.5 h-3.5" />
+              <span>CLOUD RUN API (DUMMY DATA)</span>
+            </button>
+            <button
               onClick={() => setDataSource('SIMULATED')}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
                 dataSource === 'SIMULATED'
@@ -866,6 +963,48 @@ export default function LiveMonitoringPage() {
           </Link>
         </div>
       </div>
+
+      {/* Cloud Run Dummy Data Stream Banner */}
+      {dataSource === 'CLOUD_RUN' && (
+        <div className="bg-cyan-50/90 border border-cyan-200 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs shadow-xs">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-cyan-500 animate-ping"></span>
+            <span className="font-bold text-cyan-950 uppercase tracking-wide">Cloud Run Virtual Hardware API:</span>
+            <span className="font-mono text-cyan-800 bg-white px-2 py-0.5 rounded-md border border-cyan-200 text-[11px]">
+              https://ais-dev-q7bubcyu5drcfwewqploj4-579074576008.asia-southeast1.run.app
+            </span>
+            <span className="bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded text-[10px] border border-emerald-200 flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              DIRECT BROWSER STREAM ACTIVE
+            </span>
+            {cloudRunError && (
+              <span className="bg-amber-100 text-amber-800 font-medium px-2 py-0.5 rounded text-[10px]">
+                {cloudRunError}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <a
+              href="https://ais-dev-q7bubcyu5drcfwewqploj4-579074576008.asia-southeast1.run.app"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-2.5 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-[11px] transition-all flex items-center gap-1 shadow-xs"
+            >
+              <span>Station Digital Twin</span>
+              <ExternalLink className="w-3 h-3" />
+            </a>
+            <a
+              href="https://ais-dev-q7bubcyu5drcfwewqploj4-579074576008.asia-southeast1.run.app/docs"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-2.5 py-1 rounded-lg bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-semibold text-[11px] transition-all flex items-center gap-1"
+            >
+              <span>Swagger /docs</span>
+              <ExternalLink className="w-2.5 h-2.5 text-slate-400" />
+            </a>
+          </div>
+        </div>
+      )}
 
       {/* ========================================================================= */}
       {/* 1. TOP METRIC STATS ROW (5 Cards)                                        */}
