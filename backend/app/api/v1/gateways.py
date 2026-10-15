@@ -250,10 +250,12 @@ def discover_gateway_devices(
 
     # Sync discovered devices into DB
     added_count = 0
+    seen_macs = set()
     for dev in devices:
         mac = dev.get("device_mac")
-        if not mac:
+        if not mac or mac in seen_macs:
             continue
+        seen_macs.add(mac)
         existing_dev = db.query(BLEDevice).filter(BLEDevice.device_mac == mac).first()
         if not existing_dev:
             new_dev = BLEDevice(
@@ -402,3 +404,18 @@ def get_gateway_status(
         "last_reading": last_reading,
         "discovered_devices": devices_data
     }
+
+@router.get("/{id}/telemetry")
+def get_gateway_telemetry(
+    id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    gw = db.query(Gateway).filter(Gateway.id == id).first()
+    if not gw:
+        raise HTTPException(status_code=404, detail="Gateway not found")
+    _check_gateway_access(gw, current_user)
+
+    adapter = get_gateway_adapter(gw)
+    readings = adapter.fetch_telemetry()
+    return readings

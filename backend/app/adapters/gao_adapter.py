@@ -40,7 +40,9 @@ class GAOBLEGatewayAdapter(BaseGatewayAdapter):
     def _build_url(self, endpoint: str) -> str:
         clean_endpoint = "/" + endpoint.lstrip("/")
         base = self.api_base_path.rstrip("/")
-        if base and clean_endpoint.startswith(base):
+        if not base or clean_endpoint.startswith(base):
+            return f"{self.host_url}{clean_endpoint}"
+        if clean_endpoint.startswith("/api/"):
             return f"{self.host_url}{clean_endpoint}"
         return f"{self.host_url}{base}{clean_endpoint}"
 
@@ -93,7 +95,15 @@ class GAOBLEGatewayAdapter(BaseGatewayAdapter):
             }
 
         start_time = time.perf_counter()
-        candidate_endpoints = ["/gateway/status", "/status", "/health", "/api/v1/health", "/api/v1/station"]
+        candidate_endpoints = [
+            "/api/v1/gateway/ble/telemetry/latest",
+            "/telemetry/latest",
+            "/gateway/status",
+            "/status",
+            "/health",
+            "/api/v1/health",
+            "/api/v1/station"
+        ]
         try:
             with httpx.Client(timeout=self.timeout_seconds, verify=self.verify_ssl, follow_redirects=True) as client:
                 last_response = None
@@ -138,10 +148,13 @@ class GAOBLEGatewayAdapter(BaseGatewayAdapter):
                             self._is_connected = True
                             self._last_communication = datetime.utcnow()
                             self._last_error = None
+                            
+                            is_aperture = "aperture" in self.host_url.lower() or "/ble/" in target_url
+                            gw_label = "Aperture Industrial BLE Gateway" if is_aperture else "Gateway"
                             return {
                                 "success": True,
                                 "latency_ms": latency_ms,
-                                "details": f"Gateway online at {self.host_url}{ep} (HTTP {response.status_code}, {latency_ms} ms).",
+                                "details": f"{gw_label} online at {self.host_url}{ep} (HTTP {response.status_code}, {latency_ms} ms).",
                                 "error": None,
                                 "troubleshooting": None
                             }
@@ -226,7 +239,13 @@ class GAOBLEGatewayAdapter(BaseGatewayAdapter):
         if not is_safe:
             return []
 
-        candidate_endpoints = ["/gateway/devices", "/ble/devices", "/devices"]
+        candidate_endpoints = [
+            "/api/v1/gateway/ble/telemetry/latest",
+            "/telemetry/latest",
+            "/gateway/devices",
+            "/ble/devices",
+            "/devices"
+        ]
         try:
             with httpx.Client(timeout=self.timeout_seconds, verify=self.verify_ssl, follow_redirects=True) as client:
                 for ep in candidate_endpoints:
@@ -238,26 +257,62 @@ class GAOBLEGatewayAdapter(BaseGatewayAdapter):
                             if "text/html" in content_type:
                                 continue
                             data = res.json()
-                            devices = []
-                            raw_list = data if isinstance(data, list) else (data.get("devices") or data.get("data") or [])
-                            for item in raw_list:
+                            obj_list = []
+                            if isinstance(data, dict):
+                                p_data = data.get("data")
+                                if isinstance(p_data, dict):
+                                    if "data" in p_data and isinstance(p_data["data"], dict) and "obj" in p_data["data"]:
+                                        obj_list = p_data["data"]["obj"]
+                                    elif "obj" in p_data and isinstance(p_data["obj"], list):
+                                        obj_list = p_data["obj"]
+                                    elif "devices" in p_data:
+                                        obj_list = p_data["devices"]
+                                if not obj_list:
+                                    obj_list = data.get("devices") or data.get("data") or []
+                            elif isinstance(data, list):
+                                obj_list = data
+
+                            devices_by_mac: Dict[str, Dict[str, Any]] = {}
+                            for item in obj_list:
                                 if not isinstance(item, dict):
                                     continue
-                                mac = item.get("device_id") or item.get("device_mac") or item.get("mac") or item.get("id")
+                                mac = item.get("dmac") or item.get("device_id") or item.get("device_mac") or item.get("mac") or item.get("id")
                                 if not mac:
                                     continue
-                                temp_val = item.get("temperature_c") if item.get("temperature_c") is not None else item.get("temperature")
-                                devices.append({
-                                    "device_mac": mac,
-                                    "name": item.get("name") or item.get("probe_type") or f"BLE Sensor Tag ({mac})",
+                                mac_str = str(mac)
+                                temp_val = item.get("temp") if item.get("temp") is not None else (
+                                    item.get("temperature_c") if item.get("temperature_c") is not None else item.get("temperature")
+                                )
+                                vbatt = item.get("vbatt")
+                                if vbatt is not None:
+                                    battery_pct = min(100.0, max(0.0, round((float(vbatt) - 2500.0) / 6.0, 1)))
+                                else:
+                                    battery_pct = float(item.get("battery_percent") or item.get("battery") or 95.0)
+
+                                tag_type = item.get("type")
+                                tag_label = f"Type {tag_type}" if tag_type is not None else "Sensor Tag"
+                                default_name = f"Aperture Temp Beacon #{mac_str[-4:]}" if tag_type == 8 else f"BLE Beacon ({mac_str})"
+                                name = item.get("name") or item.get("probe_type") or default_name
+
+                                if mac_str in devices_by_mac:
+                                    if temp_val is not None and devices_by_mac[mac_str].get("temperature") is None:
+                                        devices_by_mac[mac_str]["temperature"] = float(temp_val)
+                                        devices_by_mac[mac_str]["name"] = name
+                                        devices_by_mac[mac_str]["tag_type"] = tag_label
+                                    continue
+
+                                devices_by_mac[mac_str] = {
+                                    "device_mac": mac_str,
+                                    "name": name,
                                     "temperature": float(temp_val) if temp_val is not None else None,
-                                    "battery": float(item.get("battery_percent") or item.get("battery") or 95.0),
-                                    "rssi": int(item.get("signal_rssi_dbm") or item.get("rssi") or -64),
-                                    "last_seen": item.get("measured_at") or item.get("timestamp") or datetime.utcnow().isoformat()
-                                })
-                            if devices:
+                                    "battery": round(battery_pct, 1),
+                                    "rssi": int(item.get("rssi") or item.get("signal_rssi_dbm") or -64),
+                                    "last_seen": item.get("time") or item.get("measured_at") or item.get("timestamp") or datetime.utcnow().isoformat(),
+                                    "tag_type": tag_label
+                                }
+                            if devices_by_mac:
                                 self._last_communication = datetime.utcnow()
-                                return devices
+                                return list(devices_by_mac.values())
                     except Exception:
                         continue
         except Exception as e:
@@ -293,7 +348,12 @@ class GAOBLEGatewayAdapter(BaseGatewayAdapter):
         if not is_safe:
             return []
 
-        candidate_endpoints = ["/telemetry/latest", "/telemetry", "/telemetry/history"]
+        candidate_endpoints = [
+            "/api/v1/gateway/ble/telemetry/latest",
+            "/telemetry/latest",
+            "/telemetry",
+            "/telemetry/history"
+        ]
         try:
             with httpx.Client(timeout=self.timeout_seconds, verify=self.verify_ssl, follow_redirects=True) as client:
                 for ep in candidate_endpoints:
@@ -307,30 +367,56 @@ class GAOBLEGatewayAdapter(BaseGatewayAdapter):
                             payload = res.json()
                             self._last_communication = datetime.utcnow()
                             readings = []
+                            raw_items = []
+                            gateway_eui = self.gateway_eui
+
                             if isinstance(payload, dict):
-                                raw_items = payload.get("data") or payload.get("telemetry") or payload.get("readings") or payload.get("results") or [payload]
+                                p_data = payload.get("data")
+                                if isinstance(p_data, dict):
+                                    if "data" in p_data and isinstance(p_data["data"], dict) and "obj" in p_data["data"]:
+                                        gateway_eui = p_data["data"].get("gmac") or gateway_eui
+                                        raw_items = p_data["data"]["obj"]
+                                    elif "obj" in p_data and isinstance(p_data["obj"], list):
+                                        raw_items = p_data["obj"]
+                                    elif isinstance(p_data, list):
+                                        raw_items = p_data
+                                    else:
+                                        raw_items = payload.get("telemetry") or payload.get("readings") or payload.get("results") or [payload]
+                                elif isinstance(p_data, list):
+                                    raw_items = p_data
+                                else:
+                                    raw_items = payload.get("telemetry") or payload.get("readings") or payload.get("results") or [payload]
                             elif isinstance(payload, list):
                                 raw_items = payload
-                            else:
-                                raw_items = []
 
                             for r in raw_items:
                                 if not isinstance(r, dict):
                                     continue
-                                temp_val = r.get("temperature_c") if r.get("temperature_c") is not None else (r.get("temperature") if r.get("temperature") is not None else r.get("temp"))
+                                temp_val = r.get("temp") if r.get("temp") is not None else (
+                                    r.get("temperature_c") if r.get("temperature_c") is not None else r.get("temperature")
+                                )
                                 if temp_val is None:
                                     continue
+
+                                vbatt = r.get("vbatt")
+                                if vbatt is not None:
+                                    battery_pct = min(100.0, max(0.0, round((float(vbatt) - 2500.0) / 6.0, 1)))
+                                else:
+                                    battery_pct = float(r.get("battery_percent") or r.get("battery") or 95.0)
+
+                                device_mac = r.get("dmac") or r.get("device_id") or r.get("device_mac") or r.get("mac") or "PROBE-BLE-T901"
+
                                 readings.append({
-                                    "device_mac": r.get("device_id") or r.get("device_mac") or r.get("mac") or "PROBE-BLE-T901",
+                                    "device_mac": str(device_mac),
                                     "temperature": round(float(temp_val), 2),
-                                    "battery": float(r.get("battery_percent") or r.get("battery") or 95.0),
+                                    "battery": round(battery_pct, 1),
                                     "humidity": float(r.get("humidity", 45.0)),
-                                    "rssi": int(r.get("signal_rssi_dbm") or r.get("rssi") or -64),
-                                    "data_source": r.get("source") or "LIVE",
-                                    "gateway_eui": r.get("gateway_id") or self.gateway_eui,
+                                    "rssi": int(r.get("rssi") or r.get("signal_rssi_dbm") or -64),
+                                    "data_source": "APERTURE_LIVE" if ("aperture" in self.host_url.lower() or "304A" in str(gateway_eui)) else (r.get("source") or "LIVE"),
+                                    "gateway_eui": gateway_eui,
                                     "tray_state": r.get("tray_state"),
                                     "tray_position": r.get("tray_position_percent"),
-                                    "timestamp": r.get("measured_at") or r.get("timestamp") or datetime.utcnow().isoformat()
+                                    "timestamp": r.get("time") or r.get("measured_at") or r.get("timestamp") or datetime.utcnow().isoformat()
                                 })
                             if readings:
                                 return readings

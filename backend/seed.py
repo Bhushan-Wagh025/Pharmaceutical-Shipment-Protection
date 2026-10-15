@@ -171,6 +171,42 @@ def seed_database(*args, **kwargs):
             cloud_gw.status = GatewayStatus.ONLINE
             db.commit()
 
+        # 5c. Create Aperture Industrial BLE Gateway (Live Studio)
+        apt_url = "https://gateway.apertureventurestudio.com"
+        apt_eui = "GW-304A2657BF44"
+        apt_gw = db.query(Gateway).filter(Gateway.gateway_eui == apt_eui).first()
+        if not apt_gw:
+            apt_gw = Gateway(
+                company_id=company.id,
+                station_id=station.id,
+                gateway_eui=apt_eui,
+                name="Aperture Industrial BLE Gateway (Live Studio)",
+                host_url=apt_url,
+                api_base_path="/api/v1/gateway/ble",
+                auth_method="NONE",
+                polling_interval=3,
+                timeout_seconds=5,
+                is_enabled=True,
+                is_monitoring=True,
+                verify_ssl=True,
+                adapter_type="GAO_BLE",
+                status=GatewayStatus.ONLINE,
+                last_seen_at=datetime.utcnow(),
+                last_communication_at=datetime.utcnow()
+            )
+            db.add(apt_gw)
+            db.commit()
+            db.refresh(apt_gw)
+        else:
+            apt_gw.host_url = apt_url
+            apt_gw.api_base_path = "/api/v1/gateway/ble"
+            apt_gw.name = "Aperture Industrial BLE Gateway (Live Studio)"
+            apt_gw.adapter_type = "GAO_BLE"
+            apt_gw.is_enabled = True
+            apt_gw.is_monitoring = True
+            apt_gw.status = GatewayStatus.ONLINE
+            db.commit()
+
         # 6. Create BLE Devices
         ble_dev = db.query(BLEDevice).filter(BLEDevice.device_mac == "CC:50:E3:88:42:01").first()
         if not ble_dev:
@@ -198,6 +234,32 @@ def seed_database(*args, **kwargs):
             )
             db.add(ble_cloud)
             db.commit()
+
+        # Aperture Industrial Live Beacons
+        apt_beacons = [
+            ("BC572925C7F5", "Aperture Temp Beacon #C7F5", 85.0),
+            ("BC572925C816", "Aperture Temp Beacon #C816", 88.0),
+            ("BC572925C80D", "Aperture Temp Beacon #C80D", 86.0),
+            ("BC5729206C33", "Aperture Temp Beacon #6C33", 90.0),
+            ("C30000515302", "Aperture Temp Beacon #5302", 99.0),
+        ]
+        ble_apt_primary = None
+        for mac, b_name, bat in apt_beacons:
+            b_rec = db.query(BLEDevice).filter(BLEDevice.device_mac == mac).first()
+            if not b_rec:
+                b_rec = BLEDevice(
+                    company_id=company.id,
+                    device_mac=mac,
+                    name=b_name,
+                    battery_level=bat,
+                    status=BLEDeviceStatus.ONLINE,
+                    last_seen_at=datetime.utcnow()
+                )
+                db.add(b_rec)
+                db.commit()
+                db.refresh(b_rec)
+            if mac == "BC572925C7F5":
+                ble_apt_primary = b_rec
 
         # 7. Create Tray
         tray = db.query(Tray).filter(Tray.tray_code == "TRAY-UNIT-A1").first()
@@ -261,6 +323,30 @@ def seed_database(*args, **kwargs):
             db.add(shp2)
             db.commit()
             db.refresh(shp2)
+
+        # Aperture Live Telemetry Monitored Shipment
+        shp_apt = db.query(Shipment).filter(Shipment.shipment_code == "SHIP-APT-2026-LIVE").first()
+        if not shp_apt:
+            shp_apt = Shipment(
+                shipment_code="SHIP-APT-2026-LIVE",
+                package_id="PKG-APT-BEACON-844",
+                company_id=company.id,
+                product_name="Monoclonal Antibodies (mAb-2026 Live)",
+                batch_number="LOT-2026-APT-LIVE-91",
+                customer_name="Aperture Biologics / Clinical Logistics",
+                origin="Aperture BLE Gateway (304A2657BF44)",
+                destination="Geneva Central Clinical Pharmacy",
+                temp_limit=8.0,
+                temp_safe_min=2.0,
+                forecast_horizon_minutes=15,
+                status=ShipmentStatus.NORMAL,
+                risk_level=RiskLevel.LOW.value,
+                ble_device_id=ble_apt_primary.id if ble_apt_primary else ble_dev.id,
+                tray_id=tray.id
+            )
+            db.add(shp_apt)
+            db.commit()
+            db.refresh(shp_apt)
 
         # 9. AI Studio Virtual Hardware Simulator & API Server Dataset
         # Gateway: GW-BLE-EAST-01

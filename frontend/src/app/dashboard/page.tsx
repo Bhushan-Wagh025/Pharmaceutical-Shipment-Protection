@@ -75,11 +75,21 @@ export default function DashboardPage() {
                 API Disconnected: {error}
               </span>
             ) : (
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-medium text-[11px] border border-slate-200">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
                   Live Database Telemetry Stream
                 </span>
+                <a 
+                  href="https://gateway.apertureventurestudio.com/api/v1/gateway/ble/telemetry/latest"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-blue-800 font-semibold text-[11px] border border-blue-200 hover:bg-blue-100 transition-colors"
+                  title="Live Aperture Industrial BLE Gateway (GW-304A2657BF44)"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-pulse"></span>
+                  <span>Aperture BLE Gateway (Live)</span>
+                </a>
                 <a 
                   href="https://ais-dev-q7bubcyu5drcfwewqploj4-579074576008.asia-southeast1.run.app"
                   target="_blank"
@@ -88,7 +98,7 @@ export default function DashboardPage() {
                   title="Virtual Hardware Station & Dummy Data API running on Cloud Run"
                 >
                   <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse"></span>
-                  <span>Cloud Run Dummy API (Asia-SE1)</span>
+                  <span>Cloud Run Dummy API</span>
                 </a>
               </div>
             )}

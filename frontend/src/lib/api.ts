@@ -235,3 +235,43 @@ export const cloudRunApi = {
     return res.json();
   },
 };
+
+// Aperture Live Industrial BLE Gateway
+export const APERTURE_GATEWAY_URL = process.env.NEXT_PUBLIC_APERTURE_GATEWAY_URL || 'https://gateway.apertureventurestudio.com';
+
+export interface ApertureBeacon {
+  type: number;
+  dmac: string;
+  vbatt?: number;
+  temp?: number;
+  humidity?: number;
+  rssi?: number;
+  time?: string;
+  advCnt?: number;
+  secCnt?: number;
+}
+
+export interface ApertureTelemetryResponse {
+  success: boolean;
+  data: {
+    received_at: string;
+    data: {
+      msg: string;
+      gmac: string;
+      obj: ApertureBeacon[];
+    };
+  };
+}
+
+export const apertureGatewayApi = {
+  getLatestTelemetry: async (): Promise<ApertureTelemetryResponse> => {
+    const res = await fetch(`${APERTURE_GATEWAY_URL}/api/v1/gateway/ble/telemetry/latest`, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`Aperture BLE Gateway API status ${res.status}`);
+    return res.json();
+  },
+  getTelemetryHistory: async () => {
+    const res = await fetch(`${APERTURE_GATEWAY_URL}/api/v1/gateway/ble/telemetry/history`, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`Aperture BLE Gateway API status ${res.status}`);
+    return res.json();
+  },
+};

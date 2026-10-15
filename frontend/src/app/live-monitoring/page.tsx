@@ -48,7 +48,15 @@ import {
   ResponsiveContainer,
   ReferenceLine,
 } from 'recharts';
-import { api, type Gateway, cloudRunApi, CLOUD_RUN_API_URL } from '@/lib/api';
+import {
+  api,
+  type Gateway,
+  cloudRunApi,
+  CLOUD_RUN_API_URL,
+  apertureGatewayApi,
+  APERTURE_GATEWAY_URL,
+  type ApertureBeacon,
+} from '@/lib/api';
 import { useShipmentWebSocket } from '@/lib/websocket';
 import type {
   HardwareStageId,
@@ -71,7 +79,7 @@ interface EventItem {
 
 type HardwareStage = HardwareStageId;
 type TrayState = 'EXTENDED' | 'MOVING_IN' | 'PROTECTED' | 'MOVING_OUT' | 'ERROR';
-type DataSourceMode = 'LIVE' | 'CLOUD_RUN' | 'SIMULATED';
+type DataSourceMode = 'LIVE' | 'APERTURE' | 'CLOUD_RUN' | 'SIMULATED';
 
 export default function LiveMonitoringPage() {
   // Real-time loop state
@@ -133,6 +141,13 @@ export default function LiveMonitoringPage() {
   // Cloud Run API Dummy Data State
   const [cloudRunActive, setCloudRunActive] = useState<boolean>(false);
   const [cloudRunError, setCloudRunError] = useState<string | null>(null);
+
+  // Aperture BLE Gateway Live State
+  const [apertureActive, setApertureActive] = useState<boolean>(false);
+  const [apertureError, setApertureError] = useState<string | null>(null);
+  const [apertureBeacons, setApertureBeacons] = useState<ApertureBeacon[]>([]);
+  const [selectedBeaconMac, setSelectedBeaconMac] = useState<string>('');
+  const [apertureGmac, setApertureGmac] = useState<string>('304A2657BF44');
 
   // Real events & chart data (populated purely from API)
   const [events, setEvents] = useState<EventItem[]>([]);
@@ -332,6 +347,96 @@ export default function LiveMonitoringPage() {
       clearInterval(interval);
     };
   }, [dataSource, isPlaying, simSpeed, selectedShipmentId, tempMaxLimit]);
+
+  // Aperture Live BLE Gateway API Polling Loop
+  useEffect(() => {
+    if (dataSource !== 'APERTURE' || !isPlaying) return;
+
+    let isMounted = true;
+    const fetchApertureData = async () => {
+      try {
+        const res = await apertureGatewayApi.getLatestTelemetry();
+        if (!isMounted) return;
+        setApertureActive(true);
+        setApertureError(null);
+
+        const gmac = res.data?.data?.gmac || '304A2657BF44';
+        setApertureGmac(gmac);
+        const objs = res.data?.data?.obj || [];
+
+        // Filter beacons that have temperature or are type 8
+        const tempBeacons = objs.filter((b) => b.type === 8 || typeof b.temp === 'number');
+        setApertureBeacons(tempBeacons);
+
+        // Pick selected beacon or default to the first one with temperature
+        let targetBeacon = tempBeacons.find((b) => b.dmac === selectedBeaconMac);
+        if (!targetBeacon && tempBeacons.length > 0) {
+          targetBeacon = tempBeacons[0];
+          setSelectedBeaconMac(targetBeacon.dmac);
+        }
+
+        if (targetBeacon && typeof targetBeacon.temp === 'number') {
+          const tempVal = targetBeacon.temp;
+          const vbattRaw = targetBeacon.vbatt;
+          const batt = vbattRaw ? Math.min(100, Math.max(0, Math.round((vbattRaw - 2500) / 6.0))) : 92;
+          const rssi = targetBeacon.rssi ?? -73;
+          const nowStr = new Date().toTimeString().split(' ')[0];
+
+          setPackageTemp(tempVal);
+          setBatteryPct(batt);
+          setRssiDbm(rssi);
+          setSelectedDeviceMac(targetBeacon.dmac);
+          setLastReceivedTime(`${nowStr} (Aperture BLE: ${gmac})`);
+          setPacketsCount((prev) => prev + 1);
+
+          if (tempVal >= tempMaxLimit) {
+            setIsBreached(true);
+            setRiskLevel('CRITICAL');
+          } else if (tempVal >= tempMaxLimit - 0.5) {
+            setIsBreached(false);
+            setRiskLevel('ELEVATED');
+          } else {
+            setIsBreached(false);
+            setRiskLevel('NORMAL');
+          }
+
+          setChartData((prev) => {
+            const nextPt: ChartPoint = {
+              time: nowStr.slice(0, 5),
+              packageTemp: Number(tempVal.toFixed(2)),
+              coldTemp: 3.5,
+              limit: tempMaxLimit,
+            };
+            const sliced = prev.length > 20 ? prev.slice(1) : prev;
+            return [...sliced, nextPt];
+          });
+
+          // Sync with local backend
+          if (selectedShipmentId) {
+            api.ingestReading({
+              shipment_id: selectedShipmentId,
+              temperature: tempVal,
+              battery: batt,
+              signal_rssi: rssi,
+              humidity: 45.0,
+              data_source: 'LIVE',
+              timestamp: new Date().toISOString(),
+            }).catch(() => {});
+          }
+        }
+      } catch (err: any) {
+        if (!isMounted) return;
+        setApertureError(err.message || 'Error fetching Aperture Gateway');
+      }
+    };
+
+    fetchApertureData();
+    const interval = setInterval(fetchApertureData, 2500 / simSpeed);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [dataSource, isPlaying, simSpeed, selectedShipmentId, tempMaxLimit, selectedBeaconMac]);
 
   // Web Audio Synth
   const playBeep = useCallback((freq = 880, duration = 0.1, type: OscillatorType = 'sine') => {
@@ -824,7 +929,7 @@ export default function LiveMonitoringPage() {
         {/* Left: Pipeline Mode & Gateway Selector */}
         <div className="flex flex-wrap items-center gap-3">
           {/* Live vs Simulated Mode Toggle */}
-          <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
+          <div className="flex flex-wrap items-center bg-slate-100 p-1 rounded-xl border border-slate-200 gap-1">
             <button
               onClick={() => setDataSource('LIVE')}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
@@ -837,6 +942,17 @@ export default function LiveMonitoringPage() {
               <span>LIVE BLE STREAM</span>
             </button>
             <button
+              onClick={() => setDataSource('APERTURE')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                dataSource === 'APERTURE'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Radio className="w-3.5 h-3.5" />
+              <span>APERTURE BLE (LIVE API)</span>
+            </button>
+            <button
               onClick={() => setDataSource('CLOUD_RUN')}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
                 dataSource === 'CLOUD_RUN'
@@ -845,7 +961,7 @@ export default function LiveMonitoringPage() {
               }`}
             >
               <Cloud className="w-3.5 h-3.5" />
-              <span>CLOUD RUN API (DUMMY DATA)</span>
+              <span>CLOUD RUN API</span>
             </button>
             <button
               onClick={() => setDataSource('SIMULATED')}
@@ -1000,6 +1116,70 @@ export default function LiveMonitoringPage() {
               className="px-2.5 py-1 rounded-lg bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-semibold text-[11px] transition-all flex items-center gap-1"
             >
               <span>Swagger /docs</span>
+              <ExternalLink className="w-2.5 h-2.5 text-slate-400" />
+            </a>
+          </div>
+        </div>
+      )}
+
+      {/* Aperture Live Industrial BLE Gateway Stream Banner */}
+      {dataSource === 'APERTURE' && (
+        <div className="bg-blue-50/90 border border-blue-200 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs shadow-xs">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-ping"></span>
+            <span className="font-bold text-blue-950 uppercase tracking-wide">Aperture BLE Gateway (Live):</span>
+            <span className="font-mono text-blue-800 bg-white px-2 py-0.5 rounded-md border border-blue-200 text-[11px]">
+              https://gateway.apertureventurestudio.com/api/v1/gateway/ble/telemetry/latest
+            </span>
+            <span className="bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded text-[10px] border border-emerald-200 flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              LIVE INDUSTRIAL BLE ACTIVE
+            </span>
+            {apertureGmac && (
+              <span className="bg-slate-100 text-slate-700 font-mono px-2 py-0.5 rounded text-[10px] border border-slate-200">
+                GMAC: {apertureGmac}
+              </span>
+            )}
+            {/* Beacon Selector Dropdown */}
+            {apertureBeacons.length > 0 && (
+              <div className="flex items-center gap-1.5 bg-white border border-blue-200 rounded-md px-2 py-0.5">
+                <span className="text-[10px] font-semibold text-slate-600">Beacon:</span>
+                <select
+                  value={selectedBeaconMac}
+                  onChange={(e) => setSelectedBeaconMac(e.target.value)}
+                  className="text-[11px] font-mono font-bold bg-transparent border-none focus:outline-none cursor-pointer text-blue-900"
+                >
+                  {apertureBeacons.map((b) => (
+                    <option key={b.dmac} value={b.dmac}>
+                      {b.dmac} ({b.temp ?? '--'}°C)
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {apertureError && (
+              <span className="bg-amber-100 text-amber-800 font-medium px-2 py-0.5 rounded text-[10px]">
+                {apertureError}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <a
+              href="https://gateway.apertureventurestudio.com/api/v1/gateway/ble/telemetry/latest"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-[11px] transition-all flex items-center gap-1 shadow-xs"
+            >
+              <span>/latest JSON</span>
+              <ExternalLink className="w-3 h-3" />
+            </a>
+            <a
+              href="https://gateway.apertureventurestudio.com/api/v1/gateway/ble/telemetry/history"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-2.5 py-1 rounded-lg bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-semibold text-[11px] transition-all flex items-center gap-1"
+            >
+              <span>/history JSON</span>
               <ExternalLink className="w-2.5 h-2.5 text-slate-400" />
             </a>
           </div>

@@ -54,6 +54,14 @@ class Settings(BaseSettings):
         "wss://ais-dev-q7bubcyu5drcfwewqploj4-579074576008.asia-southeast1.run.app/ws/telemetry"
     )
     
+    # Live Aperture BLE Gateway
+    APERTURE_GATEWAY_URL: str = os.getenv(
+        "APERTURE_GATEWAY_URL",
+        "https://gateway.apertureventurestudio.com"
+    )
+    APERTURE_BLE_LATEST_ENDPOINT: str = "/api/v1/gateway/ble/telemetry/latest"
+    APERTURE_BLE_HISTORY_ENDPOINT: str = "/api/v1/gateway/ble/telemetry/history"
+    
     class Config:
         case_sensitive = True
         env_file = ".env"
