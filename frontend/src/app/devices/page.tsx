@@ -133,7 +133,7 @@ export default function DevicesPage() {
                 <input
                   type="text"
                   required
-                  placeholder="e.g. CC:50:E3:88:42:01"
+                  placeholder="e.g. BC5729206C16"
                   value={newDevice.device_mac}
                   onChange={(e) => setNewDevice({ ...newDevice, device_mac: e.target.value })}
                   className="w-full px-2.5 py-1.5 border border-slate-300 rounded bg-white text-xs font-mono"

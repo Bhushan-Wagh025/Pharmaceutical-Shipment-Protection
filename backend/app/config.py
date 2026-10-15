@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
-from typing import List
+from typing import List, Union
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 _ROOT_DIR = Path(__file__).resolve().parent.parent.parent
@@ -32,6 +33,18 @@ class Settings(BaseSettings):
         "http://127.0.0.1:8000",
         "*"
     ]
+
+    @field_validator("CORS_ORIGINS", mode="before")
+    def parse_cors_origins(cls, v):
+        if isinstance(v, str):
+            if v.startswith("["):
+                import json
+                try:
+                    return json.loads(v)
+                except Exception:
+                    pass
+            return [x.strip() for x in v.split(",") if x.strip()]
+        return v
     
     # AIoT Threshold Defaults
     DEFAULT_TEMP_SAFE: float = 5.5
@@ -64,6 +77,7 @@ class Settings(BaseSettings):
     
     class Config:
         case_sensitive = True
+        extra = "ignore"
         env_file = ".env"
 
 settings = Settings()

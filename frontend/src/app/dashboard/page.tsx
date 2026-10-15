@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { api } from '@/lib/api';
+import { api, apertureGatewayApi, type ApertureBeacon } from '@/lib/api';
 import { useDashboardWebSocket } from '@/lib/websocket';
 import { MetricCard } from '@/components/common/MetricCard';
 import { StatusBadge, RiskBadge, TrayBadge } from '@/components/common/StatusBadge';
@@ -17,10 +17,17 @@ import {
   ArrowRight,
   TrendingUp,
   RotateCw,
+  Radio,
+  ExternalLink,
+  Battery,
+  Clock,
 } from 'lucide-react';
 
 export default function DashboardPage() {
   const [overview, setOverview] = useState<any>(null);
+  const [liveBeacons, setLiveBeacons] = useState<any[]>([]);
+  const [apertureGmac, setApertureGmac] = useState<string>('304A2657BF44');
+  const [apertureReceivedAt, setApertureReceivedAt] = useState<string>('');
   const [recentAlerts, setRecentAlerts] = useState<any[]>([]);
   const [recentProtections, setRecentProtections] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -30,14 +37,38 @@ export default function DashboardPage() {
   const loadData = useCallback(async () => {
     try {
       setError(null);
-      const [ovData, alertsData, protectionsData] = await Promise.all([
-        api.getOverview(),
-        api.getAlerts({ limit: 5 }),
-        api.getProtectionActions(),
+      const [ovData, alertsData, protectionsData, aptData] = await Promise.all([
+        api.getOverview().catch(() => null),
+        api.getAlerts({ limit: 5 }).catch(() => []),
+        api.getProtectionActions().catch(() => []),
+        apertureGatewayApi.getLatestTelemetry().catch(() => null),
       ]);
-      setOverview(ovData);
+      if (ovData) setOverview(ovData);
       setRecentAlerts(alertsData || []);
       setRecentProtections(protectionsData?.slice(0, 5) || []);
+
+      if (aptData?.data) {
+        setApertureReceivedAt(aptData.data.received_at || '');
+        const gmac = aptData.data.data?.gmac || '304A2657BF44';
+        setApertureGmac(gmac);
+        const objs = aptData.data.data?.obj || [];
+        const tempBeacons = objs
+          .filter((b: any) => typeof b.temp === 'number' || b.type === 8)
+          .map((b: any) => {
+            const vbatt = b.vbatt;
+            const bat = vbatt ? Math.min(100, Math.max(0, Math.round((vbatt - 2500) / 6.0))) : 92;
+            return {
+              dmac: b.dmac,
+              temp: typeof b.temp === 'number' ? b.temp : null,
+              battery: bat,
+              rssi: b.rssi ?? -70,
+              time: b.time || aptData.data.received_at,
+              type: b.type ?? 8,
+            };
+          });
+        setLiveBeacons(tempBeacons);
+      }
+
       setLastUpdated(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
     } catch (err: any) {
       console.error('Failed to load dashboard data:', err);
@@ -49,7 +80,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     loadData();
-    const interval = setInterval(loadData, 5000); // Polling backup
+    const interval = setInterval(loadData, 3000); // 3-second live refresh
     return () => clearInterval(interval);
   }, [loadData]);
 
@@ -78,27 +109,27 @@ export default function DashboardPage() {
               <div className="flex flex-wrap items-center gap-2">
                 <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-medium text-[11px] border border-slate-200">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                  Live Database Telemetry Stream
+                  Exclusive Live API Source:
                 </span>
                 <a 
                   href="https://gateway.apertureventurestudio.com/api/v1/gateway/ble/telemetry/latest"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-blue-800 font-semibold text-[11px] border border-blue-200 hover:bg-blue-100 transition-colors"
-                  title="Live Aperture Industrial BLE Gateway (GW-304A2657BF44)"
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-800 font-semibold text-[11px] border border-blue-200 hover:bg-blue-100 transition-colors"
+                  title="Live Aperture Industrial BLE Gateway Telemetry Latest (GW-304A2657BF44)"
                 >
                   <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-pulse"></span>
-                  <span>Aperture BLE Gateway (Live)</span>
+                  <span>Aperture Telemetry /latest</span>
                 </a>
                 <a 
-                  href="https://ais-dev-q7bubcyu5drcfwewqploj4-579074576008.asia-southeast1.run.app"
+                  href="https://gateway.apertureventurestudio.com/api/v1/gateway/ble/telemetry/history"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-cyan-50 text-cyan-800 font-semibold text-[11px] border border-cyan-200 hover:bg-cyan-100 transition-colors"
-                  title="Virtual Hardware Station & Dummy Data API running on Cloud Run"
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-800 font-semibold text-[11px] border border-indigo-200 hover:bg-indigo-100 transition-colors"
+                  title="Aperture Industrial BLE Gateway Telemetry History"
                 >
-                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse"></span>
-                  <span>Cloud Run Dummy API</span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-pulse"></span>
+                  <span>Aperture Telemetry /history</span>
                 </a>
               </div>
             )}
@@ -123,67 +154,230 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Top Metrics Row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <MetricCard
-          title="Active Shipments"
-          value={overview?.active_shipments_count ?? '--'}
-          subtitle="Monitored in transit"
-          icon={<Package className="w-4 h-4" />}
-        />
-        <MetricCard
-          title="Normal (Safe)"
-          value={overview?.normal_count ?? '--'}
-          subtitle="Temperature stable"
-          icon={<ShieldCheck className="w-4 h-4 text-emerald-600" />}
-        />
-        <MetricCard
-          title="At Risk / Warning"
-          value={overview?.at_risk_count ?? '--'}
-          subtitle="Imminent excursion predicted"
-          alert={overview?.at_risk_count > 0}
-          icon={<AlertTriangle className="w-4 h-4 text-amber-600" />}
-        />
-        <MetricCard
-          title="Protected In Chamber"
-          value={overview?.protected_count ?? '--'}
-          subtitle="Cold pack tray retracted"
-          icon={<Layers className="w-4 h-4 text-blue-600" />}
-        />
+      {/* Live Aperture Industrial BLE Gateway Telemetry Banner */}
+      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/90 rounded-xl p-3.5 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs shadow-xs">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <span className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-pulse"></span>
+          <span className="font-bold text-blue-950 uppercase tracking-wide">Primary Live Telemetry Feed:</span>
+          <span className="font-mono text-blue-800 bg-white px-2 py-0.5 rounded-md border border-blue-200 text-[11px]">
+            https://gateway.apertureventurestudio.com/api/v1/gateway/ble/telemetry/latest
+          </span>
+          <span className="bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded text-[10px] border border-emerald-200 flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>
+            ACTIVE FLEET BLE STREAM
+          </span>
+          <span className="bg-white text-slate-700 font-mono px-2 py-0.5 rounded text-[10px] border border-slate-200">
+            GMAC: 304A2657BF44
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <a
+            href="https://gateway.apertureventurestudio.com/api/v1/gateway/ble/telemetry/latest"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-[11px] transition-all flex items-center gap-1 shadow-xs"
+          >
+            <span>/latest API</span>
+            <ArrowRight className="w-3 h-3" />
+          </a>
+          <a
+            href="https://gateway.apertureventurestudio.com/api/v1/gateway/ble/telemetry/history"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-2.5 py-1 rounded-lg bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-semibold text-[11px] transition-all flex items-center gap-1"
+          >
+            <span>/history API</span>
+          </a>
+        </div>
       </div>
 
-      {/* Real-time Infrastructure Telemetry Health */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2">
-            <Wifi className="w-4 h-4 text-indigo-600" />
-            <span className="font-medium text-slate-700">BLE Gateways Online</span>
-          </div>
-          <span className="font-mono font-bold text-slate-900 bg-white px-2 py-0.5 rounded border border-slate-200">
-            {overview?.online_gateways_count !== undefined ? overview.online_gateways_count : '--'}
-          </span>
-        </div>
-        <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2">
-            <Cpu className="w-4 h-4 text-cyan-600" />
-            <span className="font-medium text-slate-700">Connected Sensor Tags</span>
-          </div>
-          <span className="font-mono font-bold text-slate-900 bg-white px-2 py-0.5 rounded border border-slate-200">
-            {overview?.online_devices_count !== undefined ? overview.online_devices_count : '--'}
-          </span>
-        </div>
-        <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-amber-500" />
-            <span className="font-medium text-slate-700">Active Unresolved Alerts</span>
-          </div>
-          <span className={`font-mono font-bold px-2 py-0.5 rounded border ${
-            overview?.active_alerts_count > 0 ? 'bg-amber-100 text-amber-800 border-amber-300' : 'bg-white text-slate-900 border-slate-200'
-          }`}>
-            {overview?.active_alerts_count !== undefined ? overview.active_alerts_count : '--'}
-          </span>
-        </div>
-      </div>
+      {/* Real-time Metrics Computed Directly from Aperture Gateway API */}
+      {(() => {
+        const liveCount = liveBeacons.length;
+        const validTemps = liveBeacons.filter(b => typeof b.temp === 'number').map(b => b.temp);
+        const avgTemp = validTemps.length > 0 
+          ? (validTemps.reduce((a, b) => a + b, 0) / validTemps.length).toFixed(1)
+          : '--';
+        const minTemp = validTemps.length > 0 ? Math.min(...validTemps).toFixed(1) : '--';
+        const maxTemp = validTemps.length > 0 ? Math.max(...validTemps).toFixed(1) : '--';
+
+        return (
+          <>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <MetricCard
+                title="Live BLE Sensor Tags"
+                value={liveCount > 0 ? liveCount : (overview?.online_devices_count || '--')}
+                subtitle={`Broadcasting via ${apertureGmac}`}
+                icon={<Radio className="w-4 h-4 text-blue-600 animate-pulse" />}
+              />
+              <MetricCard
+                title="Mean Sensor Temperature"
+                value={avgTemp !== '--' ? `${avgTemp} °C` : '--'}
+                subtitle="Live real-time beacon average"
+                icon={<ShieldCheck className="w-4 h-4 text-emerald-600" />}
+              />
+              <MetricCard
+                title="Temperature Extremes"
+                value={minTemp !== '--' ? `${minTemp} - ${maxTemp} °C` : '--'}
+                subtitle="Min / Max across live tags"
+                alert={parseFloat(maxTemp) >= 8.0}
+                icon={<AlertTriangle className="w-4 h-4 text-amber-600" />}
+              />
+              <MetricCard
+                title="Monitored Consignments"
+                value={overview?.shipments?.length || liveCount || '--'}
+                subtitle="Active cold-chain cargo units"
+                icon={<Package className="w-4 h-4 text-indigo-600" />}
+              />
+            </div>
+
+            {/* Real-time Infrastructure Telemetry Health */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2">
+                  <Wifi className="w-4 h-4 text-indigo-600" />
+                  <span className="font-medium text-slate-700">Aperture Gateway</span>
+                </div>
+                <span className="font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                  ONLINE ({apertureGmac})
+                </span>
+              </div>
+              <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2">
+                  <Cpu className="w-4 h-4 text-cyan-600" />
+                  <span className="font-medium text-slate-700">Live Temperature Beacons</span>
+                </div>
+                <span className="font-mono font-bold text-slate-900 bg-white px-2 py-0.5 rounded border border-slate-200">
+                  {liveCount} Active
+                </span>
+              </div>
+              <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-blue-600" />
+                  <span className="font-medium text-slate-700">Last Telemetry Packet</span>
+                </div>
+                <span className="font-mono font-semibold text-slate-800 bg-white px-2 py-0.5 rounded border border-slate-200">
+                  {apertureReceivedAt ? new Date(apertureReceivedAt).toLocaleTimeString() : (lastUpdated || '--')}
+                </span>
+              </div>
+            </div>
+
+            {/* Real-Time Live BLE Beacons Table from Aperture API */}
+            <div className="bg-white rounded-xl border border-blue-200/80 shadow-xs overflow-hidden">
+              <div className="px-5 py-3.5 bg-gradient-to-r from-blue-50/50 to-indigo-50/50 border-b border-blue-200/80 flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-ping"></span>
+                  <h2 className="text-sm font-bold text-slate-900">
+                    Live Industrial BLE Beacons (Real-time Gateway API)
+                  </h2>
+                  <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-mono font-bold">
+                    {liveBeacons.length} active tags
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="text-slate-500 font-mono text-[11px]">
+                    Gateway: {apertureGmac}
+                  </span>
+                  <a
+                    href="https://gateway.apertureventurestudio.com/api/v1/gateway/ble/telemetry/latest"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded bg-white text-blue-700 hover:bg-blue-50 border border-blue-200 font-semibold text-[11px]"
+                  >
+                    <span>/latest JSON</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50/80 border-b border-slate-200 text-slate-500 uppercase tracking-wider font-semibold text-[11px]">
+                    <tr>
+                      <th className="py-2.5 px-4">Beacon Tag (DMAC)</th>
+                      <th className="py-2.5 px-4">Live Temperature</th>
+                      <th className="py-2.5 px-4">Battery Level</th>
+                      <th className="py-2.5 px-4">Signal RSSI</th>
+                      <th className="py-2.5 px-4">Type</th>
+                      <th className="py-2.5 px-4">Last Transmitted</th>
+                      <th className="py-2.5 px-4 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-normal">
+                    {liveBeacons.map((b) => {
+                      const temp = b.temp;
+                      const isColdSafe = temp !== null && temp <= 8.0 && temp >= 2.0;
+                      const isExcursion = temp !== null && temp > 8.0;
+
+                      return (
+                        <tr key={b.dmac} className="hover:bg-blue-50/30 transition-colors">
+                          <td className="py-3 px-4 font-mono font-bold text-slate-900">
+                            <div className="flex items-center gap-1.5">
+                              <Radio className="w-3.5 h-3.5 text-blue-600" />
+                              <span>{b.dmac}</span>
+                            </div>
+                            <div className="text-[10px] text-slate-400 font-sans">
+                              Aperture BLE Sensor
+                            </div>
+                          </td>
+                          <td className="py-3 px-4">
+                            {temp !== null ? (
+                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-mono text-xs font-bold ${
+                                isExcursion 
+                                  ? 'bg-amber-100 text-amber-800 border border-amber-200' 
+                                  : (isColdSafe ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-slate-100 text-slate-800')
+                              }`}>
+                                <span className={`w-1.5 h-1.5 rounded-full ${isExcursion ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'}`}></span>
+                                {temp.toFixed(2)} °C
+                              </span>
+                            ) : (
+                              <span className="font-mono text-slate-400">--</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-1 font-mono text-slate-700">
+                              <Battery className="w-3.5 h-3.5 text-slate-400" />
+                              <span>{b.battery}%</span>
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 font-mono text-slate-600">
+                            {b.rssi} dBm
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                              Type {b.type}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 font-mono text-slate-500 text-[11px]">
+                            {b.time ? (b.time.includes('T') ? new Date(b.time).toLocaleTimeString() : b.time) : '--'}
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <Link
+                              href={`/live-monitoring?beacon=${b.dmac}`}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-[11px] transition-all shadow-xs"
+                            >
+                              <Activity className="w-3 h-3" />
+                              <span>Inspect Live &rarr;</span>
+                            </Link>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {liveBeacons.length === 0 && (
+                      <tr>
+                        <td colSpan={7} className="py-8 text-center text-slate-400 text-xs">
+                          <Radio className="w-6 h-6 text-slate-300 mx-auto mb-2 animate-pulse" />
+                          Streaming live packets from Aperture Gateway...
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
+        );
+      })()}
 
       {/* Active Shipments Fleet Overview Table */}
       <div className="bg-white rounded-lg border border-slate-200 shadow-xs overflow-hidden">

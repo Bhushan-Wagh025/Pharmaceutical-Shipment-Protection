@@ -96,7 +96,7 @@ def main():
     backend_env["PYTHONPATH"] = str(BACKEND_DIR) + os.pathsep + backend_env.get("PYTHONPATH", "")
 
     backend_proc = subprocess.Popen(
-        [py_bin, "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"],
+        [py_bin, "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"],
         cwd=str(BACKEND_DIR),
         env=backend_env,
         stdout=subprocess.PIPE,

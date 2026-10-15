@@ -204,7 +204,7 @@ export default function ShipmentsListPage() {
                   <input
                     type="text"
                     required
-                    placeholder="e.g. SHP-2026-001"
+                    placeholder="e.g. SHIP-BC5729206C16"
                     value={formData.shipment_code}
                     onChange={(e) => setFormData({ ...formData, shipment_code: e.target.value })}
                     className="w-full px-2.5 py-1.5 border border-slate-300 rounded bg-white text-xs font-mono"

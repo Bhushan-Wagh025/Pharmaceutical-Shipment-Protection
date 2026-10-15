@@ -102,76 +102,7 @@ def seed_database(*args, **kwargs):
             db.commit()
             db.refresh(station)
 
-        # 5. Create Gateway
-        gateway = db.query(Gateway).filter(Gateway.gateway_eui == "GW-COLD-8842-A1").first()
-        if not gateway:
-            gateway = Gateway(
-                company_id=company.id,
-                station_id=station.id,
-                gateway_eui="GW-COLD-8842-A1",
-                name="GAO Industrial Cold-Chain Gateway #1 (Simulated)",
-                ip_address="127.0.0.1",
-                host_url="http://127.0.0.1:8000",
-                api_base_path="/api/v1",
-                auth_method="NONE",
-                polling_interval=3,
-                timeout_seconds=5,
-                is_enabled=True,
-                is_monitoring=True,
-                verify_ssl=False,
-                adapter_type="SIMULATED",
-                status=GatewayStatus.ONLINE,
-                last_seen_at=datetime.utcnow(),
-                last_communication_at=datetime.utcnow()
-            )
-            db.add(gateway)
-            db.commit()
-            db.refresh(gateway)
-        else:
-            gateway.adapter_type = "SIMULATED"
-            gateway.is_monitoring = True
-            gateway.is_enabled = True
-            gateway.polling_interval = 3
-            gateway.status = GatewayStatus.ONLINE
-            db.commit()
-
-        # 5b. Create Cloud Run Dummy Data & Virtual Gateway
-        cloud_url = "https://ais-dev-q7bubcyu5drcfwewqploj4-579074576008.asia-southeast1.run.app"
-        cloud_eui = "GW-AIS-RUN-01"
-        cloud_gw = db.query(Gateway).filter(Gateway.gateway_eui == cloud_eui).first()
-        if not cloud_gw:
-            cloud_gw = Gateway(
-                company_id=company.id,
-                station_id=station.id,
-                gateway_eui=cloud_eui,
-                name="Cloud Run Virtual Hardware & Dummy Data Gateway (Asia-SE1)",
-                host_url=cloud_url,
-                api_base_path="/api/v1",
-                auth_method="NONE",
-                polling_interval=3,
-                timeout_seconds=5,
-                is_enabled=True,
-                is_monitoring=True,
-                verify_ssl=False,
-                adapter_type="GAO_BLE",
-                status=GatewayStatus.ONLINE,
-                last_seen_at=datetime.utcnow(),
-                last_communication_at=datetime.utcnow()
-            )
-            db.add(cloud_gw)
-            db.commit()
-            db.refresh(cloud_gw)
-        else:
-            cloud_gw.host_url = cloud_url
-            cloud_gw.api_base_path = "/api/v1"
-            cloud_gw.name = "Cloud Run Virtual Hardware & Dummy Data Gateway (Asia-SE1)"
-            cloud_gw.adapter_type = "GAO_BLE"
-            cloud_gw.is_enabled = True
-            cloud_gw.is_monitoring = True
-            cloud_gw.status = GatewayStatus.ONLINE
-            db.commit()
-
-        # 5c. Create Aperture Industrial BLE Gateway (Live Studio)
+        # 5. Create / Ensure Aperture Industrial BLE Gateway (Live Studio: 304A2657BF44)
         apt_url = "https://gateway.apertureventurestudio.com"
         apt_eui = "GW-304A2657BF44"
         apt_gw = db.query(Gateway).filter(Gateway.gateway_eui == apt_eui).first()
@@ -180,7 +111,7 @@ def seed_database(*args, **kwargs):
                 company_id=company.id,
                 station_id=station.id,
                 gateway_eui=apt_eui,
-                name="Aperture Industrial BLE Gateway (Live Studio)",
+                name="Aperture Industrial BLE Gateway (GW-304A2657BF44)",
                 host_url=apt_url,
                 api_base_path="/api/v1/gateway/ble",
                 auth_method="NONE",
@@ -200,278 +131,21 @@ def seed_database(*args, **kwargs):
         else:
             apt_gw.host_url = apt_url
             apt_gw.api_base_path = "/api/v1/gateway/ble"
-            apt_gw.name = "Aperture Industrial BLE Gateway (Live Studio)"
+            apt_gw.name = "Aperture Industrial BLE Gateway (GW-304A2657BF44)"
             apt_gw.adapter_type = "GAO_BLE"
             apt_gw.is_enabled = True
             apt_gw.is_monitoring = True
             apt_gw.status = GatewayStatus.ONLINE
             db.commit()
 
-        # 6. Create BLE Devices
-        ble_dev = db.query(BLEDevice).filter(BLEDevice.device_mac == "CC:50:E3:88:42:01").first()
-        if not ble_dev:
-            ble_dev = BLEDevice(
-                company_id=company.id,
-                device_mac="CC:50:E3:88:42:01",
-                name="BLE ColdTag Ultra #8021",
-                battery_level=98.5,
-                status=BLEDeviceStatus.ONLINE,
-                last_seen_at=datetime.utcnow()
-            )
-            db.add(ble_dev)
-            db.commit()
-            db.refresh(ble_dev)
+        # Delete any old hardcoded or test gateways
+        for old_gw in db.query(Gateway).filter(Gateway.gateway_eui != apt_eui).all():
+            db.delete(old_gw)
+        db.commit()
 
-        ble_cloud = db.query(BLEDevice).filter(BLEDevice.device_mac == "PROBE-BLE-T901").first()
-        if not ble_cloud:
-            ble_cloud = BLEDevice(
-                company_id=company.id,
-                device_mac="PROBE-BLE-T901",
-                name="Cloud Run Virtual BLE Sensor #T901",
-                battery_level=89.0,
-                status=BLEDeviceStatus.ONLINE,
-                last_seen_at=datetime.utcnow()
-            )
-            db.add(ble_cloud)
-            db.commit()
-
-        # Aperture Industrial Live Beacons
-        apt_beacons = [
-            ("BC572925C7F5", "Aperture Temp Beacon #C7F5", 85.0),
-            ("BC572925C816", "Aperture Temp Beacon #C816", 88.0),
-            ("BC572925C80D", "Aperture Temp Beacon #C80D", 86.0),
-            ("BC5729206C33", "Aperture Temp Beacon #6C33", 90.0),
-            ("C30000515302", "Aperture Temp Beacon #5302", 99.0),
-        ]
-        ble_apt_primary = None
-        for mac, b_name, bat in apt_beacons:
-            b_rec = db.query(BLEDevice).filter(BLEDevice.device_mac == mac).first()
-            if not b_rec:
-                b_rec = BLEDevice(
-                    company_id=company.id,
-                    device_mac=mac,
-                    name=b_name,
-                    battery_level=bat,
-                    status=BLEDeviceStatus.ONLINE,
-                    last_seen_at=datetime.utcnow()
-                )
-                db.add(b_rec)
-                db.commit()
-                db.refresh(b_rec)
-            if mac == "BC572925C7F5":
-                ble_apt_primary = b_rec
-
-        # 7. Create Tray
-        tray = db.query(Tray).filter(Tray.tray_code == "TRAY-UNIT-A1").first()
-        if not tray:
-            tray = Tray(
-                station_id=station.id,
-                tray_code="TRAY-UNIT-A1",
-                name="Motorized Cold Compartment Actuator Unit A1",
-                state=TrayState.EXTENDED,
-                position_percentage=0.0,
-                temp_cold_pack=2.5,
-                target_temp=4.0
-            )
-            db.add(tray)
-            db.commit()
-            db.refresh(tray)
-
-        # 8. Create Demo Shipments if not present
-        shp1 = db.query(Shipment).filter(Shipment.shipment_code == "SHP-2026-001").first()
-        if not shp1:
-            shp1 = Shipment(
-                shipment_code="SHP-2026-001",
-                package_id="PKG-mRNA-892",
-                company_id=company.id,
-                product_name="mRNA Vaccine BNT162b2 (Ultra-Sensitive)",
-                batch_number="LOT-2026-9948",
-                customer_name="Novartis Healthcare / Charité Hospital",
-                origin="Basel Cold Hub, Switzerland",
-                destination="Berlin Central Hospital, Germany",
-                temp_limit=8.0,
-                temp_safe_min=2.0,
-                forecast_horizon_minutes=15,
-                status=ShipmentStatus.NORMAL,
-                risk_level=RiskLevel.LOW.value,
-                ble_device_id=ble_dev.id,
-                tray_id=tray.id
-            )
-            db.add(shp1)
-            db.commit()
-            db.refresh(shp1)
-
-        shp2 = db.query(Shipment).filter(Shipment.shipment_code == "SHP-2026-002").first()
-        if not shp2:
-            shp2 = Shipment(
-                shipment_code="SHP-2026-002",
-                package_id="PKG-INS-441",
-                company_id=company.id,
-                product_name="Recombinant Human Insulin (Glargine)",
-                batch_number="LOT-2026-3312",
-                customer_name="Roche Diagnostics",
-                origin="Frankfurt Cold Facility",
-                destination="Zurich Pharmacy Hub",
-                temp_limit=8.0,
-                temp_safe_min=2.0,
-                forecast_horizon_minutes=15,
-                status=ShipmentStatus.NORMAL,
-                risk_level=RiskLevel.LOW.value,
-                ble_device_id=ble_dev.id,
-                tray_id=tray.id
-            )
-            db.add(shp2)
-            db.commit()
-            db.refresh(shp2)
-
-        # Aperture Live Telemetry Monitored Shipment
-        shp_apt = db.query(Shipment).filter(Shipment.shipment_code == "SHIP-APT-2026-LIVE").first()
-        if not shp_apt:
-            shp_apt = Shipment(
-                shipment_code="SHIP-APT-2026-LIVE",
-                package_id="PKG-APT-BEACON-844",
-                company_id=company.id,
-                product_name="Monoclonal Antibodies (mAb-2026 Live)",
-                batch_number="LOT-2026-APT-LIVE-91",
-                customer_name="Aperture Biologics / Clinical Logistics",
-                origin="Aperture BLE Gateway (304A2657BF44)",
-                destination="Geneva Central Clinical Pharmacy",
-                temp_limit=8.0,
-                temp_safe_min=2.0,
-                forecast_horizon_minutes=15,
-                status=ShipmentStatus.NORMAL,
-                risk_level=RiskLevel.LOW.value,
-                ble_device_id=ble_apt_primary.id if ble_apt_primary else ble_dev.id,
-                tray_id=tray.id
-            )
-            db.add(shp_apt)
-            db.commit()
-            db.refresh(shp_apt)
-
-        # 9. AI Studio Virtual Hardware Simulator & API Server Dataset
-        # Gateway: GW-BLE-EAST-01
-        gw_ais = db.query(Gateway).filter(Gateway.gateway_eui == "GW-BLE-EAST-01").first()
-        if not gw_ais:
-            gw_ais = Gateway(
-                company_id=company.id,
-                station_id=station.id,
-                gateway_eui="GW-BLE-EAST-01",
-                name="BLE East Gateway 01 (Virtual AI Studio)",
-                ip_address="127.0.0.1",
-                host_url="http://127.0.0.1:8000",
-                api_base_path="/api/v1",
-                auth_method="NONE",
-                polling_interval=3,
-                timeout_seconds=5,
-                is_enabled=True,
-                is_monitoring=True,
-                verify_ssl=False,
-                adapter_type="SIMULATED",
-                status=GatewayStatus.ONLINE,
-                last_seen_at=datetime.utcnow(),
-                last_communication_at=datetime.utcnow()
-            )
-            db.add(gw_ais)
-            db.commit()
-            db.refresh(gw_ais)
-
-        # Sensor Probe: PROBE-BLE-T901 (Sensirion ThermoTrack BLE-X)
-        probe_ais = db.query(BLEDevice).filter(BLEDevice.device_mac == "PROBE-BLE-T901").first()
-        if not probe_ais:
-            probe_ais = BLEDevice(
-                company_id=company.id,
-                device_mac="PROBE-BLE-T901",
-                name="Sensirion ThermoTrack BLE-X (Dock Bay 4)",
-                battery_level=99.2,
-                status=BLEDeviceStatus.ONLINE,
-                last_seen_at=datetime.utcnow()
-            )
-            db.add(probe_ais)
-            db.commit()
-            db.refresh(probe_ais)
-
-        # Tray: tray-default-01 (Standard Tray Alpha)
-        tray_ais = db.query(Tray).filter(Tray.tray_code == "tray-default-01").first()
-        if not tray_ais:
-            tray_ais = Tray(
-                station_id=station.id,
-                tray_code="tray-default-01",
-                name="Standard Tray Alpha (AI Studio Virtual Rig)",
-                state=TrayState.EXTENDED,
-                position_percentage=0.0,
-                temp_cold_pack=3.8,
-                target_temp=4.0
-            )
-            db.add(tray_ais)
-            db.commit()
-            db.refresh(tray_ais)
-
-        # Shipment: SHIP-VAX-2026-094 (mRNA-427 Lyophilized Vaccine Batch #48)
-        shp_ais = db.query(Shipment).filter(Shipment.shipment_code == "SHIP-VAX-2026-094").first()
-        if not shp_ais:
-            shp_ais = Shipment(
-                shipment_code="SHIP-VAX-2026-094",
-                package_id="PKG-mRNA-427",
-                company_id=company.id,
-                product_name="mRNA-427 Lyophilized Vaccine Batch #48",
-                batch_number="LOT-2026-mRNA427-B48",
-                customer_name="Charité University Hospital - Berlin Depot",
-                origin="Dock Bay 4 - Virtual Warehouse, Basel",
-                destination="Berlin Central Hospital, Germany",
-                temp_limit=8.0,
-                temp_safe_min=2.0,
-                forecast_horizon_minutes=15,
-                status=ShipmentStatus.NORMAL,
-                risk_level=RiskLevel.LOW.value,
-                ble_device_id=probe_ais.id,
-                tray_id=tray_ais.id
-            )
-            db.add(shp_ais)
-            db.commit()
-            db.refresh(shp_ais)
-
-        # 10. Ensure baseline telemetry readings for shipment 1 & AI Studio shipment
-        for s_target, dev_target, gw_target in [
-            (shp1, ble_dev, gateway),
-            (shp_ais, probe_ais, gw_ais)
-        ]:
-            readings_count = db.query(TemperatureReading).filter(TemperatureReading.shipment_id == s_target.id).count()
-            now = datetime.utcnow()
-            if readings_count < 3:
-                baseline_temps = [5.12, 5.18, 5.25, 5.31, 5.38]
-                for i, t in enumerate(baseline_temps):
-                    db.add(TemperatureReading(
-                        shipment_id=s_target.id,
-                        device_id=dev_target.id,
-                        gateway_id=gw_target.id,
-                        temperature=t,
-                        battery=98.5,
-                        humidity=42.0,
-                        signal_rssi=-62,
-                        data_source="SIMULATED",
-                        validation_status="VALID",
-                        timestamp=now - timedelta(seconds=(len(baseline_temps) - i) * 10),
-                        server_timestamp=now
-                    ))
-                db.commit()
-
-                forecast_data = AITemperatureForecaster.forecast_shipment_temperature(db, s_target)
-                if forecast_data:
-                    db.add(TemperatureForecast(
-                        shipment_id=s_target.id,
-                        current_temp=forecast_data["current_temp"],
-                        predicted_temp=forecast_data["predicted_temp"],
-                        horizon_minutes=forecast_data["horizon_minutes"],
-                        risk_level=forecast_data["risk_level"],
-                        will_cross_limit=forecast_data["will_cross_limit"],
-                        time_to_cross_seconds=forecast_data["time_to_cross_seconds"],
-                        confidence=forecast_data["confidence"],
-                        slope_c_per_min=forecast_data["slope_c_per_min"],
-                        model_type=forecast_data["model_type"],
-                        timestamp=now
-                    ))
-                    s_target.risk_level = forecast_data["risk_level"]
-                    db.commit()
+        # 6. Synchronize purely real-time Aperture BLE Gateway telemetry & beacons
+        from resync_aperture import resync
+        resync()
 
         logger.info("Database seeding successfully verified.")
     except Exception as e:

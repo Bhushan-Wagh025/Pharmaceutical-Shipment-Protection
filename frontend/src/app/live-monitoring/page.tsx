@@ -51,8 +51,6 @@ import {
 import {
   api,
   type Gateway,
-  cloudRunApi,
-  CLOUD_RUN_API_URL,
   apertureGatewayApi,
   APERTURE_GATEWAY_URL,
   type ApertureBeacon,
@@ -89,8 +87,8 @@ export default function LiveMonitoringPage() {
   const [soundEnabled, setSoundEnabled] = useState<boolean>(false);
   const audioCtxRef = useRef<AudioContext | null>(null);
 
-  // Pipeline Data Source Mode: LIVE (Real/Mock BLE Gateway) vs SIMULATED (Local Rig Sim)
-  const [dataSource, setDataSource] = useState<DataSourceMode>('LIVE');
+  // Pipeline Data Source Mode: APERTURE (Live Industrial Gateway API)
+  const [dataSource, setDataSource] = useState<DataSourceMode>('APERTURE');
   const [gateways, setGateways] = useState<Gateway[]>([]);
   const [selectedGatewayId, setSelectedGatewayId] = useState<number | string>(1);
   const [selectedDeviceMac, setSelectedDeviceMac] = useState<string>('--');
@@ -137,10 +135,6 @@ export default function LiveMonitoringPage() {
 
   // 6 Pipeline Steps (1 to 6)
   const [activeStep, setActiveStep] = useState<number>(1);
-
-  // Cloud Run API Dummy Data State
-  const [cloudRunActive, setCloudRunActive] = useState<boolean>(false);
-  const [cloudRunError, setCloudRunError] = useState<string | null>(null);
 
   // Aperture BLE Gateway Live State
   const [apertureActive, setApertureActive] = useState<boolean>(false);
@@ -241,13 +235,65 @@ export default function LiveMonitoringPage() {
     }
   }, []);
 
-  // Initial load gateways and shipments
+  // Initial load gateways, shipments, and Aperture telemetry history
+  // Load historical telemetry for selected beacon directly from Aperture History API
+  const loadBeaconHistory = useCallback(async (beaconMac?: string) => {
+    try {
+      const res: any = await apertureGatewayApi.getTelemetryHistory();
+      if (!res?.data) return;
+      const records = Array.isArray(res.data) ? res.data : [];
+      const pts: ChartPoint[] = [];
+      // Records from Aperture history (chronological order)
+      for (const entry of [...records].reverse()) {
+        const objs = entry?.data?.obj || [];
+        const match = beaconMac 
+          ? objs.find((o: any) => o.dmac === beaconMac && typeof o.temp === 'number')
+          : objs.find((o: any) => typeof o.temp === 'number');
+        if (match) {
+          const timeStr = entry.received_at 
+            ? new Date(entry.received_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
+            : '--';
+          pts.push({
+            time: timeStr,
+            packageTemp: Number(match.temp.toFixed(2)),
+            coldTemp: 3.5,
+            limit: 8.0,
+          });
+        }
+      }
+      if (pts.length > 0) {
+        setChartData(pts);
+      }
+    } catch (err) {
+      console.log('Error loading Aperture beacon history:', err);
+    }
+  }, []);
+
+  // Initial load gateways, shipments, and Aperture telemetry history
   useEffect(() => {
+    let isMounted = true;
+
+    // Check URL query param for beacon
+    let initialBeacon = '';
+    if (typeof window !== 'undefined') {
+      const urlBeacon = new URLSearchParams(window.location.search).get('beacon');
+      if (urlBeacon) {
+        initialBeacon = urlBeacon;
+        setSelectedBeaconMac(urlBeacon);
+        setSelectedDeviceMac(urlBeacon);
+      }
+    }
+
+    // Pre-populate chart points directly from Aperture Gateway History API
+    loadBeaconHistory(initialBeacon || undefined);
+
     api.getGateways()
       .then((data) => {
+        if (!isMounted) return;
         if (Array.isArray(data) && data.length > 0) {
           setGateways(data);
-          setSelectedGatewayId(data[0].id);
+          const aptGw = data.find((g: any) => g.gateway_eui === 'GW-304A2657BF44' || g.host_url?.includes('aperture'));
+          setSelectedGatewayId(aptGw ? aptGw.id : data[0].id);
         } else {
           setGateways([]);
         }
@@ -256,97 +302,35 @@ export default function LiveMonitoringPage() {
 
     api.getShipments()
       .then((data) => {
+        if (!isMounted) return;
         if (Array.isArray(data) && data.length > 0) {
           setShipments(data);
-          setSelectedShipmentId(data[0].id);
-          loadShipmentData(data[0].id);
+          const matchShp = initialBeacon 
+            ? data.find((s: any) => s.ble_device?.device_mac === initialBeacon || s.shipment_code.includes(initialBeacon))
+            : data[0];
+          const targetId = matchShp ? matchShp.id : data[0].id;
+          setSelectedShipmentId(targetId);
+          loadShipmentData(targetId);
         } else {
           setShipments([]);
         }
       })
       .catch(() => setShipments([]));
-  }, [loadShipmentData]);
 
-  // Cloud Run API Dummy Data Ingestion Loop
+    return () => { isMounted = false; };
+  }, [loadShipmentData, loadBeaconHistory]);
+
+  // When beacon changes, reload historical curve for that specific beacon & sync shipment
   useEffect(() => {
-    if (dataSource !== 'CLOUD_RUN' || !isPlaying) return;
-
-    let isMounted = true;
-    const fetchCloudRunData = async () => {
-      try {
-        const data = await cloudRunApi.getLatestTelemetry();
-        if (!isMounted) return;
-        setCloudRunActive(true);
-        setCloudRunError(null);
-
-        const tempVal = typeof data.temperature_c === 'number' ? data.temperature_c : (typeof data.temperature === 'number' ? data.temperature : 23.5);
-        const batt = typeof data.battery_percent === 'number' ? data.battery_percent : 89;
-        const rssi = typeof data.signal_rssi_dbm === 'number' ? data.signal_rssi_dbm : -62;
-        const nowStr = new Date().toTimeString().split(' ')[0];
-
-        setPackageTemp(tempVal);
-        setBatteryPct(batt);
-        setRssiDbm(rssi);
-        setLastReceivedTime(`${nowStr} (Cloud Run API)`);
-        setPacketsCount((prev) => prev + 1);
-
-        if (data.tray_state) {
-          setTrayState(data.tray_state);
-          const pos = data.tray_position_percent ?? (data.tray_state === 'PROTECTED' ? 100 : 0);
-          setTrayPosition(pos);
-          setTrayTarget(pos);
-        }
-
-        if (data.ambient_temperature_c) setAmbientTemp(data.ambient_temperature_c);
-        if (data.compartment_temperature_c) setColdTemp(data.compartment_temperature_c);
-
-        if (tempVal >= tempMaxLimit) {
-          setIsBreached(true);
-          setRiskLevel('CRITICAL');
-        } else if (tempVal >= tempMaxLimit - 0.5) {
-          setIsBreached(false);
-          setRiskLevel('ELEVATED');
-        } else {
-          setIsBreached(false);
-          setRiskLevel('NORMAL');
-        }
-
-        setChartData((prev) => {
-          const nextPt: ChartPoint = {
-            time: nowStr.slice(0, 5),
-            packageTemp: Number(tempVal.toFixed(2)),
-            coldTemp: data.compartment_temperature_c ?? 3.8,
-            limit: tempMaxLimit,
-          };
-          const sliced = prev.length > 20 ? prev.slice(1) : prev;
-          return [...sliced, nextPt];
-        });
-
-        // Sync with local backend so AI ML Trajectory & audit log stay updated
-        if (selectedShipmentId) {
-          api.ingestReading({
-            shipment_id: selectedShipmentId,
-            temperature: tempVal,
-            battery: batt,
-            signal_rssi: rssi,
-            humidity: 45.0,
-            data_source: 'SIMULATED',
-            timestamp: new Date().toISOString()
-          }).catch(() => {});
-        }
-      } catch (err: any) {
-        if (!isMounted) return;
-        setCloudRunError(err.message || 'Error fetching Cloud Run API');
+    if (selectedBeaconMac) {
+      loadBeaconHistory(selectedBeaconMac);
+      const matchShp = shipments.find((s: any) => s.ble_device?.device_mac === selectedBeaconMac || s.shipment_code.includes(selectedBeaconMac));
+      if (matchShp && matchShp.id !== selectedShipmentId) {
+        setSelectedShipmentId(matchShp.id);
+        loadShipmentData(matchShp.id);
       }
-    };
-
-    fetchCloudRunData();
-    const interval = setInterval(fetchCloudRunData, 2500 / simSpeed);
-    return () => {
-      isMounted = false;
-      clearInterval(interval);
-    };
-  }, [dataSource, isPlaying, simSpeed, selectedShipmentId, tempMaxLimit]);
+    }
+  }, [selectedBeaconMac, loadBeaconHistory, shipments, selectedShipmentId, loadShipmentData]);
 
   // Aperture Live BLE Gateway API Polling Loop
   useEffect(() => {
@@ -636,97 +620,6 @@ export default function LiveMonitoringPage() {
     return () => clearTimeout(timer);
   }, [isPlaying, isAutoWalkthrough, activeStep, simSpeed, playBeep, dataSource]);
 
-  // Telemetry physics in SIMULATED mode
-  useEffect(() => {
-    if (!isPlaying || dataSource === 'LIVE') return;
-
-    const intervalTime = Math.max(300, 1000 / simSpeed);
-
-    const interval = setInterval(() => {
-      setPacketsCount((prev) => prev + 1);
-
-      setColdTemp((prev) => {
-        const next = 3.2 + (Math.random() - 0.5) * 0.15;
-        return Number(next.toFixed(1));
-      });
-
-      setPackageTemp((prev) => {
-        let delta = 0;
-        if (trayPosition >= 80) {
-          delta = -0.06 * (prev - 4.2);
-        } else if (trayPosition <= 20) {
-          delta = 0.04 * (ambientTemp - prev);
-        } else {
-          delta = 0.01;
-        }
-
-        delta += (Math.random() - 0.5) * 0.03;
-        const newTemp = Math.max(2.8, Math.min(32.0, prev + delta));
-        const rounded = Number(newTemp.toFixed(2));
-
-        const slope = delta * 15;
-        const pred = Number((newTemp + slope * 1.8).toFixed(1));
-        setPredictedTemp(pred);
-
-        if (pred >= tempMaxLimit) {
-          setIsBreached(true);
-          setRiskLevel('CRITICAL');
-          if (isAutonomous && trayPosition < 50 && !isTrayMoving && !isEmergencyStopped) {
-            setActiveHwStage('LAPTOP_AI');
-            setTimeout(() => setActiveHwStage('ESP32'), 400);
-
-            setTrayTarget(100);
-            setActiveStep(3);
-            const nowTime = new Date().toTimeString().split(' ')[0];
-            setAiDecision('Move to Cooling');
-            setDecisionTime(nowTime);
-
-            playBeep(980, 0.2, 'triangle');
-
-            const autoEvent: EventItem = {
-              id: Date.now().toString(),
-              time: nowTime,
-              type: 'blue',
-              message: `Autonomous Protection: Laptop AI commanded ESP32 to retract Sliding Tray into Cold Compartment!`,
-              isNew: true,
-            };
-            setEvents((evs) => [autoEvent, ...evs.slice(0, 7)]);
-          }
-        } else if (pred >= tempMaxLimit - 0.5) {
-          setIsBreached(false);
-          setRiskLevel('ELEVATED');
-        } else {
-          setIsBreached(false);
-          setRiskLevel('NORMAL');
-          if (trayPosition >= 90) {
-            setAiDecision('Protected in Cooling');
-            setActiveStep(5);
-          } else {
-            setAiDecision('Monitoring (Normal)');
-            setActiveStep(2);
-          }
-        }
-
-        if (Math.random() < 0.35) {
-          const nowStr = new Date().toTimeString().split(' ')[0].slice(0, 5);
-          setChartData((prevData) => {
-            const nextPoint: ChartPoint = {
-              time: nowStr,
-              packageTemp: rounded,
-              coldTemp: 3.2,
-              limit: 8.0,
-            };
-            const sliced = prevData.length > 10 ? prevData.slice(1) : prevData;
-            return [...sliced, nextPoint];
-          });
-        }
-
-        return rounded;
-      });
-    }, intervalTime);
-
-    return () => clearInterval(interval);
-  }, [isPlaying, simSpeed, trayPosition, ambientTemp, tempMaxLimit, isAutonomous, isTrayMoving, playBeep, dataSource, isEmergencyStopped]);
 
   // Actions
   const handleTriggerExcursion = async () => {
@@ -928,52 +821,15 @@ export default function LiveMonitoringPage() {
       <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         {/* Left: Pipeline Mode & Gateway Selector */}
         <div className="flex flex-wrap items-center gap-3">
-          {/* Live vs Simulated Mode Toggle */}
-          <div className="flex flex-wrap items-center bg-slate-100 p-1 rounded-xl border border-slate-200 gap-1">
-            <button
-              onClick={() => setDataSource('LIVE')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                dataSource === 'LIVE'
-                  ? 'bg-emerald-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <span className={`w-2 h-2 rounded-full ${dataSource === 'LIVE' ? 'bg-white animate-pulse' : 'bg-emerald-500'}`}></span>
-              <span>LIVE BLE STREAM</span>
-            </button>
-            <button
-              onClick={() => setDataSource('APERTURE')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                dataSource === 'APERTURE'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Radio className="w-3.5 h-3.5" />
-              <span>APERTURE BLE (LIVE API)</span>
-            </button>
-            <button
-              onClick={() => setDataSource('CLOUD_RUN')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                dataSource === 'CLOUD_RUN'
-                  ? 'bg-cyan-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Cloud className="w-3.5 h-3.5" />
-              <span>CLOUD RUN API</span>
-            </button>
-            <button
-              onClick={() => setDataSource('SIMULATED')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                dataSource === 'SIMULATED'
-                  ? 'bg-purple-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>SIMULATED RIG</span>
-            </button>
+          {/* Exclusive Aperture Live Gateway Badge */}
+          <div className="flex items-center gap-2 bg-blue-50/90 border border-blue-200 px-3 py-1.5 rounded-xl text-xs font-bold text-blue-900 shadow-xs">
+            <Radio className="w-3.5 h-3.5 text-blue-600 animate-pulse shrink-0" />
+            <span className="text-slate-600 font-semibold">Source:</span>
+            <span className="font-bold text-blue-900">Aperture Industrial BLE Gateway</span>
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] bg-emerald-100 text-emerald-800 font-bold border border-emerald-200">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>
+              LIVE
+            </span>
           </div>
 
           {/* Consignment Selector */}
@@ -1080,47 +936,6 @@ export default function LiveMonitoringPage() {
         </div>
       </div>
 
-      {/* Cloud Run Dummy Data Stream Banner */}
-      {dataSource === 'CLOUD_RUN' && (
-        <div className="bg-cyan-50/90 border border-cyan-200 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs shadow-xs">
-          <div className="flex flex-wrap items-center gap-2.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-cyan-500 animate-ping"></span>
-            <span className="font-bold text-cyan-950 uppercase tracking-wide">Cloud Run Virtual Hardware API:</span>
-            <span className="font-mono text-cyan-800 bg-white px-2 py-0.5 rounded-md border border-cyan-200 text-[11px]">
-              https://ais-dev-q7bubcyu5drcfwewqploj4-579074576008.asia-southeast1.run.app
-            </span>
-            <span className="bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded text-[10px] border border-emerald-200 flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-              DIRECT BROWSER STREAM ACTIVE
-            </span>
-            {cloudRunError && (
-              <span className="bg-amber-100 text-amber-800 font-medium px-2 py-0.5 rounded text-[10px]">
-                {cloudRunError}
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <a
-              href="https://ais-dev-q7bubcyu5drcfwewqploj4-579074576008.asia-southeast1.run.app"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-2.5 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-[11px] transition-all flex items-center gap-1 shadow-xs"
-            >
-              <span>Station Digital Twin</span>
-              <ExternalLink className="w-3 h-3" />
-            </a>
-            <a
-              href="https://ais-dev-q7bubcyu5drcfwewqploj4-579074576008.asia-southeast1.run.app/docs"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-2.5 py-1 rounded-lg bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-semibold text-[11px] transition-all flex items-center gap-1"
-            >
-              <span>Swagger /docs</span>
-              <ExternalLink className="w-2.5 h-2.5 text-slate-400" />
-            </a>
-          </div>
-        </div>
-      )}
 
       {/* Aperture Live Industrial BLE Gateway Stream Banner */}
       {dataSource === 'APERTURE' && (

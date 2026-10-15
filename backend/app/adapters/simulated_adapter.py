@@ -10,75 +10,41 @@ logger = logging.getLogger("pharma.simulated_adapter")
 class SimulatedGatewayAdapter(BaseGatewayAdapter):
     """
     Adapter implementing telemetry ingestion and device discovery from
-    the software-simulated IoT thermal environment.
+    the live Aperture BLE Gateway API (https://gateway.apertureventurestudio.com).
     """
 
-    def __init__(self, shipment_code: str = "SHP-2026-001", gateway_eui: str = "GW-COLD-8842-A1"):
+    def __init__(self, shipment_code: str = "SHIP-BC5729206C16", gateway_eui: str = "GW-304A2657BF44"):
         self.shipment_code = shipment_code
         self.gateway_eui = gateway_eui
         self._is_connected = True
         self._last_comm = datetime.utcnow()
+        from app.adapters.gao_adapter import GAOBLEGatewayAdapter
+        self._live_adapter = GAOBLEGatewayAdapter(
+            host_url="https://gateway.apertureventurestudio.com",
+            api_base_path="/api/v1/gateway/ble",
+            gateway_eui=gateway_eui
+        )
 
     def connect(self) -> bool:
-        self._is_connected = True
         self._last_comm = datetime.utcnow()
-        logger.info(f"Simulated Gateway [{self.gateway_eui}] connected.")
-        return True
+        res = self._live_adapter.test_connection()
+        self._is_connected = res.get("success", False)
+        return self._is_connected
 
     def test_connection(self) -> Dict[str, Any]:
         self._last_comm = datetime.utcnow()
-        return {
-            "success": True,
-            "latency_ms": 8.4,
-            "details": "Simulated BLE Gateway loopback healthy. Virtual BLE radio stack responsive.",
-            "error": None,
-            "troubleshooting": None
-        }
+        return self._live_adapter.test_connection()
 
     def discover_devices(self) -> List[Dict[str, Any]]:
         self._last_comm = datetime.utcnow()
-        sim = get_simulated_shipment(self.shipment_code)
-        current_temp = round(sim.current_temp, 2)
-        return [
-            {
-                "device_mac": "CC:50:E3:88:42:01",
-                "name": "BLE ColdTag Ultra #8021 (Primary)",
-                "temperature": current_temp,
-                "battery": 98.5,
-                "rssi": -58,
-                "last_seen": datetime.utcnow().isoformat()
-            },
-            {
-                "device_mac": "F4:B8:5E:21:99:A4",
-                "name": "KKM K6 Thermal Beacon #02 (Secondary)",
-                "temperature": round(current_temp + 0.3, 2),
-                "battery": 94.0,
-                "rssi": -69,
-                "last_seen": datetime.utcnow().isoformat()
-            }
-        ]
+        return self._live_adapter.discover_devices()
 
     def fetch_telemetry(self) -> List[Dict[str, Any]]:
-        if not self._is_connected:
-            return []
         self._last_comm = datetime.utcnow()
-        sim = get_simulated_shipment(self.shipment_code)
-        tray = get_simulated_tray("TRAY-UNIT-A1")
-        reading = sim.step(tray_state=tray.state)
-        reading["device_mac"] = "CC:50:E3:88:42:01"
-        reading["data_source"] = "SIMULATED"
-        reading["gateway_eui"] = self.gateway_eui
-        return [reading]
+        return self._live_adapter.fetch_telemetry()
 
     def get_status(self) -> Dict[str, Any]:
-        return {
-            "connected": self._is_connected,
-            "status": "CONNECTED" if self._is_connected else "DISCONNECTED",
-            "last_communication": self._last_comm.isoformat() if self._last_comm else None,
-            "active_devices_count": 2,
-            "error": None,
-            "troubleshooting": None
-        }
+        return self._live_adapter.get_status()
 
     def disconnect(self) -> bool:
         self._is_connected = False

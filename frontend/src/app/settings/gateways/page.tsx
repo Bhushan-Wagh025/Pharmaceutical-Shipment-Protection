@@ -517,45 +517,6 @@ export default function GatewaySettingsPage() {
         </div>
       </div>
 
-      {/* Cloud Run Virtual Hardware Digital Twin Active Banner */}
-      {(formData.host_url?.includes('run.app') || formData.host_url?.includes('ais-dev')) && (
-        <div className="bg-cyan-50/90 border border-cyan-200 rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs shadow-xs">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-cyan-500 animate-ping"></span>
-              <span className="font-bold text-cyan-950 uppercase tracking-wide">
-                Cloud Run Virtual Hardware Simulator & Dummy Data Station
-              </span>
-              <span className="bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded text-[10px] border border-emerald-200">
-                Active Virtual Station
-              </span>
-            </div>
-            <p className="text-cyan-800 text-[11px]">
-              This gateway connects directly to the cloud-hosted virtual hardware station for live dummy BLE telemetry, motorized tray kinematics, and OpenAPI endpoints.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <a
-              href="https://ais-dev-q7bubcyu5drcfwewqploj4-579074576008.asia-southeast1.run.app"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-xs transition-all flex items-center gap-1.5 shadow-xs"
-            >
-              <span>Launch Station Digital Twin</span>
-              <ExternalLink className="w-3.5 h-3.5" />
-            </a>
-            <a
-              href="https://ais-dev-q7bubcyu5drcfwewqploj4-579074576008.asia-southeast1.run.app/docs"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-semibold text-xs transition-all flex items-center gap-1"
-            >
-              <span>API Docs (/docs)</span>
-              <ExternalLink className="w-3 h-3 text-slate-400" />
-            </a>
-          </div>
-        </div>
-      )}
 
       {/* Aperture Live Industrial BLE Gateway Active Banner */}
       {formData.host_url?.toLowerCase().includes('aperture') && (
@@ -642,7 +603,7 @@ export default function GatewaySettingsPage() {
                   required
                   value={formData.gateway_eui}
                   onChange={(e) => setFormData({ ...formData, gateway_eui: e.target.value })}
-                  placeholder="e.g. GW-COLD-8842-A1"
+                  placeholder="e.g. GW-304A2657BF44"
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
                 />
               </div>
