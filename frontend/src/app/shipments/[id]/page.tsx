@@ -22,6 +22,7 @@ import {
   ArrowLeft,
   RotateCw,
   FileText,
+  Package,
 } from 'lucide-react';
 
 export default function ShipmentDetailPage() {
@@ -98,6 +99,24 @@ export default function ShipmentDetailPage() {
   const trayState = shipment?.tray?.state ?? 'EXTENDED';
   const trayPosition = shipment?.tray?.position_percentage ?? 0;
   const isExcursionImminent = (currentTemp !== null && currentTemp >= tempLimit) || (forecastTemp !== null && forecastTemp >= tempLimit);
+
+  if (!isLoading && !shipment) {
+    return (
+      <div className="bg-white rounded-lg border border-slate-200 p-12 text-center max-w-lg mx-auto my-12 space-y-4">
+        <Package className="w-12 h-12 text-slate-300 mx-auto" />
+        <h2 className="text-base font-bold text-slate-900">Shipment Record Not Found</h2>
+        <p className="text-xs text-slate-500">
+          No consignment was found with identifier #{shipmentId}. Register a new shipment or select an active batch from the registry.
+        </p>
+        <Link
+          href="/shipments"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded bg-brand-600 text-white hover:bg-brand-700"
+        >
+          <ArrowLeft className="w-3.5 h-3.5" /> Back to Shipments
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

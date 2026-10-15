@@ -12,6 +12,7 @@ import {
   AlertTriangle,
   Layers,
   Wifi,
+  Cpu,
   Activity,
   ArrowRight,
   TrendingUp,
@@ -53,9 +54,11 @@ export default function DashboardPage() {
   }, [loadData]);
 
   // Real-time WebSocket live feed
-  useDashboardWebSocket((msg) => {
+  const handleWsMessage = useCallback((msg: any) => {
     loadData();
-  });
+  }, [loadData]);
+
+  useDashboardWebSocket(handleWsMessage);
 
   return (
     <div className="space-y-6">
@@ -66,10 +69,17 @@ export default function DashboardPage() {
             Cold-Chain Operations Dashboard
           </h1>
           <div className="flex items-center gap-3 mt-1 text-xs text-slate-500">
-            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-medium text-[11px] border border-slate-200">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-              Source: PostgreSQL DB via FastAPI
-            </span>
+            {error ? (
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-red-50 text-red-700 font-medium text-[11px] border border-red-200">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-ping"></span>
+                API Disconnected: {error}
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-medium text-[11px] border border-slate-200">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                Live Database Telemetry Stream
+              </span>
+            )}
             {lastUpdated && <span>Last sync: <strong className="text-slate-700 font-mono">{lastUpdated}</strong></span>}
           </div>
         </div>
@@ -86,7 +96,7 @@ export default function DashboardPage() {
             className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold rounded-lg bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition-colors"
           >
             <Activity className="w-3.5 h-3.5" />
-            Live Demo Monitoring
+            Live Monitoring
           </Link>
         </div>
       </div>
@@ -120,6 +130,39 @@ export default function DashboardPage() {
         />
       </div>
 
+      {/* Real-time Infrastructure Telemetry Health */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 flex items-center justify-between text-xs">
+          <div className="flex items-center gap-2">
+            <Wifi className="w-4 h-4 text-indigo-600" />
+            <span className="font-medium text-slate-700">BLE Gateways Online</span>
+          </div>
+          <span className="font-mono font-bold text-slate-900 bg-white px-2 py-0.5 rounded border border-slate-200">
+            {overview?.online_gateways_count !== undefined ? overview.online_gateways_count : '--'}
+          </span>
+        </div>
+        <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 flex items-center justify-between text-xs">
+          <div className="flex items-center gap-2">
+            <Cpu className="w-4 h-4 text-cyan-600" />
+            <span className="font-medium text-slate-700">Connected Sensor Tags</span>
+          </div>
+          <span className="font-mono font-bold text-slate-900 bg-white px-2 py-0.5 rounded border border-slate-200">
+            {overview?.online_devices_count !== undefined ? overview.online_devices_count : '--'}
+          </span>
+        </div>
+        <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 flex items-center justify-between text-xs">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-500" />
+            <span className="font-medium text-slate-700">Active Unresolved Alerts</span>
+          </div>
+          <span className={`font-mono font-bold px-2 py-0.5 rounded border ${
+            overview?.active_alerts_count > 0 ? 'bg-amber-100 text-amber-800 border-amber-300' : 'bg-white text-slate-900 border-slate-200'
+          }`}>
+            {overview?.active_alerts_count !== undefined ? overview.active_alerts_count : '--'}
+          </span>
+        </div>
+      </div>
+
       {/* Active Shipments Fleet Overview Table */}
       <div className="bg-white rounded-lg border border-slate-200 shadow-xs overflow-hidden">
         <div className="px-5 py-3.5 border-b border-slate-200 flex items-center justify-between">
@@ -146,7 +189,7 @@ export default function DashboardPage() {
                 <th className="py-2.5 px-4">Shipment / Product</th>
                 <th className="py-2.5 px-4">Current Temp</th>
                 <th className="py-2.5 px-4">Temp Limit</th>
-                <th className="py-2.5 px-4">AI Forecast (15m)</th>
+                <th className="py-2.5 px-4">AI Forecast</th>
                 <th className="py-2.5 px-4">Risk Level</th>
                 <th className="py-2.5 px-4">Tray State</th>
                 <th className="py-2.5 px-4">Status</th>
@@ -157,6 +200,7 @@ export default function DashboardPage() {
               {overview?.shipments?.map((s: any) => {
                 const currentTemp = s.current_temperature !== undefined && s.current_temperature !== null ? s.current_temperature : null;
                 const forecastTemp = s.latest_forecast?.predicted_temp !== undefined && s.latest_forecast?.predicted_temp !== null ? s.latest_forecast.predicted_temp : null;
+                const horizonMin = s.latest_forecast?.horizon_minutes ?? s.forecast_horizon_minutes ?? 15;
                 const isOverLimit = (currentTemp !== null && currentTemp >= s.temp_limit) || (forecastTemp !== null && forecastTemp >= s.temp_limit);
 
                 return (
@@ -179,7 +223,9 @@ export default function DashboardPage() {
                       )}
                     </td>
                     <td className="py-3 px-4">
-                      <span className="font-mono text-xs text-slate-600">{s.temp_limit.toFixed(1)} °C</span>
+                      <span className="font-mono text-xs text-slate-600">
+                        {s.temp_limit !== undefined && s.temp_limit !== null ? `${s.temp_limit.toFixed(1)} °C` : '--'}
+                      </span>
                     </td>
                     <td className="py-3 px-4">
                       {forecastTemp !== null ? (
@@ -188,7 +234,7 @@ export default function DashboardPage() {
                           <span className={`font-semibold ${isOverLimit ? 'text-red-600 font-bold' : 'text-slate-800'}`}>
                             {forecastTemp.toFixed(2)} °C
                           </span>
-                          <span className="text-[10px] text-slate-400 font-sans">(15m)</span>
+                          <span className="text-[10px] text-slate-400 font-sans">({horizonMin}m)</span>
                         </div>
                       ) : (
                         <span className="text-slate-400 text-xs italic">Unavailable</span>
@@ -198,7 +244,7 @@ export default function DashboardPage() {
                       <RiskBadge risk={s.risk_level} />
                     </td>
                     <td className="py-3 px-4">
-                      <TrayBadge state={s.tray?.state || 'EXTENDED'} />
+                      <TrayBadge state={s.tray?.state || 'STANDBY'} />
                     </td>
                     <td className="py-3 px-4">
                       <StatusBadge status={s.status} />
@@ -246,7 +292,7 @@ export default function DashboardPage() {
                 <div className="flex items-center justify-between mb-1">
                   <span className="font-semibold text-slate-800">{alt.title}</span>
                   <span className="text-[10px] text-slate-400">
-                    {new Date(alt.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    {alt.created_at ? new Date(alt.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--'}
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-600 line-clamp-2">{alt.message}</p>
@@ -274,16 +320,22 @@ export default function DashboardPage() {
               <div key={act.id} className="p-2.5 rounded bg-blue-50/40 border border-blue-100 text-xs">
                 <div className="flex items-center justify-between mb-1">
                   <span className="font-semibold text-blue-900">
-                    {act.decision}: Pred {act.prediction_temp}°C ≥ Limit {act.threshold}°C
+                    {act.decision}
+                    {act.prediction_temp !== undefined && act.prediction_temp !== null && (
+                      <span className="text-slate-600 font-mono font-normal ml-1">
+                        (Pred: {Number(act.prediction_temp).toFixed(1)}°C
+                        {act.threshold !== undefined && act.threshold !== null ? ` / Limit: ${Number(act.threshold).toFixed(1)}°C` : ''})
+                      </span>
+                    )}
                   </span>
                   <span className="text-[10px] text-slate-500">
-                    {new Date(act.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    {act.timestamp ? new Date(act.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--'}
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-600">{act.reason}</p>
-                {act.cooling_verified && (
+                {act.cooling_verified && act.recovery_temp !== undefined && act.recovery_temp !== null && (
                   <div className="mt-1 text-[10px] text-emerald-700 font-semibold flex items-center gap-1">
-                    ✓ Cooling verified at {act.recovery_temp}°C
+                    ✓ Cooling verified at {Number(act.recovery_temp).toFixed(2)}°C
                   </div>
                 )}
               </div>

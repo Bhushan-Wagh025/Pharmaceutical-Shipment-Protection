@@ -56,7 +56,7 @@ export default function ReportsPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <MetricCard
           title="GxP Compliance Rate"
-          value={`${report?.compliance_rate_percent ?? 100}%`}
+          value={report?.compliance_rate_percent !== undefined ? `${report.compliance_rate_percent}%` : '--'}
           subtitle="Batches preserved without excursion"
           icon={<ShieldCheck className="w-4 h-4 text-emerald-600" />}
         />

@@ -22,7 +22,7 @@ const NAV_ITEMS = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Live Monitoring', href: '/live-monitoring', icon: Activity },
   { name: 'Device Status', href: '/devices', icon: Cpu },
-  { name: 'Alerts & Events', href: '/alerts', icon: BellRing, badge: '1' },
+  { name: 'Alerts & Events', href: '/alerts', icon: BellRing },
   { name: 'Reports', href: '/reports', icon: FileSpreadsheet },
   { name: 'Settings', href: '/settings', icon: Settings },
   { name: 'Shipments', href: '/shipments', icon: Package },
@@ -57,30 +57,25 @@ export function Sidebar() {
             >
               <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-white' : 'text-slate-500'}`} />
               <span className="flex-1">{item.name}</span>
-              {item.badge && (
-                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-red-500 text-white leading-none flex items-center justify-center">
-                  {item.badge}
-                </span>
-              )}
             </Link>
           );
         })}
       </div>
 
-      {/* Demo Quick Banner */}
+      {/* System Telemetry Info Box */}
       <div className="p-3 m-3 bg-white rounded-lg border border-slate-200 text-xs">
         <div className="flex items-center gap-1.5 font-semibold text-slate-800 text-[11px] mb-1">
-          <Flame className="w-3.5 h-3.5 text-amber-500" />
-          <span>Active Demonstration</span>
+          <Activity className="w-3.5 h-3.5 text-emerald-600" />
+          <span>Cold Chain Network</span>
         </div>
         <p className="text-[10px] text-slate-500 leading-relaxed mb-2">
-          Tracking dummy batch SHP-2026-001 with live BLE telemetry and AI excursion prediction.
+          Connected to live IoT telemetry stream and automated protection services.
         </p>
         <Link
-          href="/shipments/1"
+          href="/live-monitoring"
           className="inline-flex w-full items-center justify-center py-1 rounded bg-brand-50 hover:bg-brand-100 text-brand-700 font-semibold text-[11px] border border-brand-200 transition-colors"
         >
-          Open Shipment Console &rarr;
+          Open Live Monitor &rarr;
         </Link>
       </div>
     </aside>

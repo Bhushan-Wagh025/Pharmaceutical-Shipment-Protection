@@ -84,18 +84,23 @@ export default function LiveMonitoringPage() {
   const [dataSource, setDataSource] = useState<DataSourceMode>('LIVE');
   const [gateways, setGateways] = useState<Gateway[]>([]);
   const [selectedGatewayId, setSelectedGatewayId] = useState<number | string>(1);
-  const [selectedDeviceMac, setSelectedDeviceMac] = useState<string>('C3:4A:21:88:9F:12');
-  const [lastReceivedTime, setLastReceivedTime] = useState<string>('Just now');
+  const [selectedDeviceMac, setSelectedDeviceMac] = useState<string>('--');
+  const [lastReceivedTime, setLastReceivedTime] = useState<string>('--');
   const [serverTimestamp, setServerTimestamp] = useState<string>('');
+
+  // Active Shipments Selection
+  const [shipments, setShipments] = useState<any[]>([]);
+  const [selectedShipmentId, setSelectedShipmentId] = useState<number | null>(null);
+  const [selectedShipment, setSelectedShipment] = useState<any>(null);
 
   // Active hardware pipeline step currently executing
   const [activeHwStage, setActiveHwStage] = useState<HardwareStage>('BEACON');
-  const [isAutoWalkthrough, setIsAutoWalkthrough] = useState<boolean>(true);
+  const [isAutoWalkthrough, setIsAutoWalkthrough] = useState<boolean>(false);
 
-  // Live temperatures
-  const [packageTemp, setPackageTemp] = useState<number>(7.2);
-  const [ambientTemp, setAmbientTemp] = useState<number>(22.5);
-  const [coldTemp, setColdTemp] = useState<number>(3.2);
+  // Live temperatures (from API & real sensors)
+  const [packageTemp, setPackageTemp] = useState<number | null>(null);
+  const [ambientTemp, setAmbientTemp] = useState<number>(22.0);
+  const [coldTemp, setColdTemp] = useState<number>(3.5);
 
   // Motorized Tray: 0 (Extended outside in ambient) to 100 (Protected inside cooling chamber)
   const [trayPosition, setTrayPosition] = useState<number>(0);
@@ -105,47 +110,118 @@ export default function LiveMonitoringPage() {
   const [isEmergencyStopped, setIsEmergencyStopped] = useState<boolean>(false);
 
   // AI Prediction & Risk
-  const [predictedTemp, setPredictedTemp] = useState<number>(7.6);
+  const [predictedTemp, setPredictedTemp] = useState<number | null>(null);
   const [forecastHorizon, setForecastHorizon] = useState<string>('15 min');
   const [tempMinLimit, setTempMinLimit] = useState<number>(2.0);
   const [tempMaxLimit, setTempMaxLimit] = useState<number>(8.0);
   const [riskLevel, setRiskLevel] = useState<'NORMAL' | 'ELEVATED' | 'CRITICAL'>('NORMAL');
   const [aiDecision, setAiDecision] = useState<string>('Monitoring (Normal)');
-  const [decisionTime, setDecisionTime] = useState<string>('14:31:42');
+  const [decisionTime, setDecisionTime] = useState<string>('--');
   const [isBreached, setIsBreached] = useState<boolean>(false);
 
-  // Hardware counters (increment live)
-  const [packetsCount, setPacketsCount] = useState<number>(1428);
+  // Hardware counters
+  const [packetsCount, setPacketsCount] = useState<number>(0);
   const [motorCurrentMa, setMotorCurrentMa] = useState<number>(180);
   const [clockTime, setClockTime] = useState<string>('');
-  const [batteryPct, setBatteryPct] = useState<number>(98);
-  const [rssiDbm, setRssiDbm] = useState<number>(-58);
+  const [batteryPct, setBatteryPct] = useState<number | null>(null);
+  const [rssiDbm, setRssiDbm] = useState<number | null>(null);
 
   // 6 Pipeline Steps (1 to 6)
   const [activeStep, setActiveStep] = useState<number>(1);
 
-  // Recent Events Stream
-  const [events, setEvents] = useState<EventItem[]>([
-    { id: '1', time: '14:31:42', type: 'blue', message: 'Stage 6 (Cold Chamber): Package secured in Insulated Cold Compartment with Cold Pack' },
-    { id: '2', time: '14:31:41', type: 'blue', message: 'Stage 5 (Servo & Tray): Position feedback LS2 Chamber Limit Switch engaged (100%)' },
-    { id: '3', time: '14:31:40', type: 'blue', message: 'Stage 4 (ESP32): Executed USB Serial command from Laptop -> Driving Servo PWM' },
-    { id: '4', time: '14:31:38', type: 'amber', message: 'Stage 3 (Laptop/Mini PC): scikit-learn AI Model predicted 8.1°C excursion -> Decision: Move to Cooling' },
-    { id: '5', time: '14:28:15', type: 'green', message: 'Stage 2 (GAO Gateway): Forwarded MQTT JSON payload (Package Temp: 7.4°C)' },
-    { id: '6', time: '14:28:05', type: 'green', message: 'Stage 1 (KKM K6 Beacon): Emitted BLE telemetry packet from package' },
-  ]);
+  // Real events & chart data (populated purely from API)
+  const [events, setEvents] = useState<EventItem[]>([]);
+  const [chartData, setChartData] = useState<ChartPoint[]>([]);
 
-  // Rolling Live Chart Data
-  const [chartData, setChartData] = useState<ChartPoint[]>([
-    { time: '14:22', packageTemp: 5.8, coldTemp: 3.2, limit: 8.0 },
-    { time: '14:24', packageTemp: 6.4, coldTemp: 3.2, limit: 8.0 },
-    { time: '14:26', packageTemp: 7.1, coldTemp: 3.2, limit: 8.0 },
-    { time: '14:28', packageTemp: 7.8, coldTemp: 3.2, limit: 8.0 },
-    { time: '14:29', packageTemp: 8.1, coldTemp: 3.2, limit: 8.0 },
-    { time: '14:30', packageTemp: 6.2, coldTemp: 3.2, limit: 8.0 },
-    { time: '14:32', packageTemp: 5.4, coldTemp: 3.2, limit: 8.0 },
-  ]);
+  // Load shipment data from API
+  const loadShipmentData = useCallback(async (shipmentId: number) => {
+    try {
+      const [sData, history, forecast, alertsData, actionsData] = await Promise.all([
+        api.getShipment(shipmentId),
+        api.getTempHistory(shipmentId, 25),
+        api.getLatestForecast(shipmentId).catch(() => null),
+        api.getAlerts({ shipment_id: shipmentId, limit: 10 }).catch(() => []),
+        api.getProtectionActions(shipmentId).catch(() => []),
+      ]);
 
-  // Load configured gateways from backend
+      setSelectedShipment(sData);
+      if (sData) {
+        if (sData.temp_limit) setTempMaxLimit(sData.temp_limit);
+        if (sData.temp_safe_min) setTempMinLimit(sData.temp_safe_min);
+        if (sData.ble_device?.device_mac) {
+          setSelectedDeviceMac(sData.ble_device.device_mac);
+        } else {
+          setSelectedDeviceMac(sData.package_id || `ID-${sData.id}`);
+        }
+        if (sData.current_battery !== undefined && sData.current_battery !== null) {
+          setBatteryPct(sData.current_battery);
+        } else if (sData.ble_device?.battery_level !== undefined) {
+          setBatteryPct(sData.ble_device.battery_level);
+        }
+        if (sData.tray) {
+          setTrayState(sData.tray.state || 'EXTENDED');
+          const pos = sData.tray.position_percentage ?? (sData.tray.state === 'PROTECTED' ? 100 : 0);
+          setTrayPosition(pos);
+          setTrayTarget(pos);
+          if (sData.tray.temp_cold_pack) setColdTemp(sData.tray.temp_cold_pack);
+        }
+        if (sData.current_temperature !== undefined && sData.current_temperature !== null) {
+          setPackageTemp(sData.current_temperature);
+        } else if (Array.isArray(history) && history.length > 0) {
+          setPackageTemp(history[history.length - 1].temperature);
+        } else {
+          setPackageTemp(null);
+        }
+        const rRisk = sData.risk_level;
+        setRiskLevel(rRisk === 'HIGH' || rRisk === 'CRITICAL' ? 'CRITICAL' : rRisk === 'MEDIUM' ? 'ELEVATED' : 'NORMAL');
+      }
+
+      if (forecast && forecast.predicted_temp !== undefined) {
+        setPredictedTemp(forecast.predicted_temp);
+      } else {
+        setPredictedTemp(null);
+      }
+
+      if (Array.isArray(history) && history.length > 0) {
+        setPacketsCount(history.length);
+        const pts: ChartPoint[] = history.map((h: any) => ({
+          time: new Date(h.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          packageTemp: Number(h.temperature.toFixed(2)),
+          coldTemp: sData?.tray?.temp_cold_pack ?? 3.5,
+          limit: sData?.temp_limit ?? 8.0,
+        }));
+        setChartData(pts);
+        setLastReceivedTime(new Date(history[history.length - 1].timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' UTC');
+      } else {
+        setPacketsCount(0);
+        setChartData([]);
+        setLastReceivedTime('--');
+      }
+
+      const evts: EventItem[] = [];
+      (actionsData || []).forEach((p: any) => {
+        evts.push({
+          id: `p-${p.id}`,
+          time: new Date(p.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          type: 'blue',
+          message: `Protection Action (${p.decision}): ${p.reason}`,
+        });
+      });
+      (alertsData || []).forEach((a: any) => {
+        evts.push({
+          id: `a-${a.id}`,
+          time: new Date(a.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          type: a.severity === 'CRITICAL' ? 'red' : a.severity === 'WARNING' ? 'amber' : 'green',
+          message: `${a.title}: ${a.message}`,
+        });
+      });
+      setEvents(evts);
+    } catch (err) {
+      console.error('Failed to load shipment console data:', err);
+    }
+  }, []);
+
+  // Initial load gateways and shipments
   useEffect(() => {
     api.getGateways()
       .then((data) => {
@@ -156,11 +232,20 @@ export default function LiveMonitoringPage() {
           setGateways([]);
         }
       })
-      .catch((err) => {
-        console.warn('Failed to load gateways from backend:', err);
-        setGateways([]);
-      });
-  }, []);
+      .catch(() => setGateways([]));
+
+    api.getShipments()
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          setShipments(data);
+          setSelectedShipmentId(data[0].id);
+          loadShipmentData(data[0].id);
+        } else {
+          setShipments([]);
+        }
+      })
+      .catch(() => setShipments([]));
+  }, [loadShipmentData]);
 
   // Web Audio Synth
   const playBeep = useCallback((freq = 880, duration = 0.1, type: OscillatorType = 'sine') => {
@@ -188,12 +273,12 @@ export default function LiveMonitoringPage() {
   }, [soundEnabled]);
 
   // WebSocket Live Updates
-  const { isConnected: isWsConnected } = useShipmentWebSocket(1, (data) => {
+  const { isConnected: isWsConnected } = useShipmentWebSocket(selectedShipmentId || 1, (data) => {
     if (!data) return;
     if (data.type === 'telemetry' || data.temperature !== undefined) {
       const nowStr = new Date().toTimeString().split(' ')[0];
-      const tempVal = Number(data.temperature ?? packageTemp);
-      setPackageTemp(tempVal);
+      const tempVal = data.temperature !== undefined ? Number(data.temperature) : packageTemp;
+      if (tempVal !== null) setPackageTemp(tempVal);
       setLastReceivedTime(`${nowStr} UTC`);
       setServerTimestamp(data.timestamp || nowStr);
       setPacketsCount((prev) => prev + 1);
@@ -222,16 +307,18 @@ export default function LiveMonitoringPage() {
       }
 
       // Append chart point
-      setChartData((prev) => {
-        const nextPt: ChartPoint = {
-          time: nowStr.slice(0, 5),
-          packageTemp: tempVal,
-          coldTemp: coldTemp,
-          limit: tempMaxLimit,
-        };
-        const sliced = prev.length > 12 ? prev.slice(1) : prev;
-        return [...sliced, nextPt];
-      });
+      if (tempVal !== null) {
+        setChartData((prev) => {
+          const nextPt: ChartPoint = {
+            time: nowStr.slice(0, 5),
+            packageTemp: tempVal,
+            coldTemp: coldTemp,
+            limit: tempMaxLimit,
+          };
+          const sliced = prev.length > 20 ? prev.slice(1) : prev;
+          return [...sliced, nextPt];
+        });
+      }
     }
 
     if (data.alert) {
@@ -529,10 +616,14 @@ export default function LiveMonitoringPage() {
   const handleReset = () => {
     playBeep(600, 0.1);
     setIsEmergencyStopped(false);
-    setPackageTemp(7.2);
-    setPredictedTemp(7.6);
-    setAmbientTemp(22.5);
-    setColdTemp(3.2);
+    if (selectedShipmentId) {
+      loadShipmentData(selectedShipmentId);
+    } else {
+      setPackageTemp(null);
+      setPredictedTemp(null);
+      setChartData([]);
+      setEvents([]);
+    }
     setTrayTarget(0);
     setTrayPosition(0);
     setTrayState('EXTENDED');
@@ -542,7 +633,7 @@ export default function LiveMonitoringPage() {
     setAiDecision('Monitoring (Normal)');
     setDecisionTime(new Date().toTimeString().split(' ')[0]);
     setIsBreached(false);
-    setIsAutoWalkthrough(true);
+    setIsAutoWalkthrough(false);
   };
 
   const toggleTrayTarget = () => {
@@ -672,6 +763,30 @@ export default function LiveMonitoringPage() {
             </button>
           </div>
 
+          {/* Consignment Selector */}
+          <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl text-xs">
+            <Box className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+            <span className="text-slate-500 font-medium">Consignment:</span>
+            <select
+              value={selectedShipmentId || ''}
+              onChange={(e) => {
+                const id = Number(e.target.value);
+                setSelectedShipmentId(id);
+                loadShipmentData(id);
+              }}
+              className="bg-transparent font-bold text-slate-800 focus:outline-hidden cursor-pointer"
+            >
+              {shipments.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.shipment_code} - {s.product_name}
+                </option>
+              ))}
+              {shipments.length === 0 && (
+                <option value="">No Active Shipments</option>
+              )}
+            </select>
+          </div>
+
           {/* Gateway Selector */}
           <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl text-xs">
             <Radio className="w-3.5 h-3.5 text-blue-600 shrink-0" />
@@ -710,7 +825,7 @@ export default function LiveMonitoringPage() {
             <HardDrive className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
             <span className="text-slate-500 font-medium">Device:</span>
             <span className="font-mono font-bold text-slate-800">{selectedDeviceMac}</span>
-            <span className="text-[10px] text-slate-500 font-mono">({rssiDbm} dBm | Batt: {batteryPct}%)</span>
+            <span className="text-[10px] text-slate-500 font-mono">({rssiDbm !== null ? `${rssiDbm} dBm` : '--'} | Batt: {batteryPct !== null ? `${batteryPct}%` : '--'})</span>
           </div>
         </div>
 
@@ -785,7 +900,7 @@ export default function LiveMonitoringPage() {
           <div className={`text-3xl font-extrabold tracking-tight pl-1 font-mono transition-colors ${
             isBreached ? 'text-red-600' : 'text-slate-900'
           }`}>
-            {packageTemp.toFixed(1)} <span className="text-lg font-normal text-slate-500">°C</span>
+            {packageTemp !== null ? packageTemp.toFixed(1) : '--'} <span className="text-lg font-normal text-slate-500">°C</span>
           </div>
           <div className="flex items-center justify-between mt-2 pl-1 text-[11px]">
             <span className="text-slate-500 font-mono">Rx: {lastReceivedTime}</span>
@@ -818,7 +933,7 @@ export default function LiveMonitoringPage() {
             </span>
           </div>
           <div className="text-3xl font-extrabold text-slate-900 tracking-tight pl-1 font-mono">
-            {predictedTemp.toFixed(1)} <span className="text-lg font-normal text-slate-500">°C</span>
+            {predictedTemp !== null ? predictedTemp.toFixed(1) : '--'} <span className="text-lg font-normal text-slate-500">°C</span>
           </div>
           <div className="flex items-center justify-between mt-2 pl-1 text-[11px] text-slate-500">
             <span>Horizon: <strong className="text-indigo-700 font-mono">15m</strong></span>
@@ -838,11 +953,11 @@ export default function LiveMonitoringPage() {
             </div>
           </div>
           <div className="text-3xl font-extrabold text-slate-900 tracking-tight pl-1 font-mono">
-            {coldTemp.toFixed(1)} <span className="text-lg font-normal text-slate-500">°C</span>
+            {coldTemp !== null ? coldTemp.toFixed(1) : '--'} <span className="text-lg font-normal text-slate-500">°C</span>
           </div>
           <div className="flex items-center justify-between mt-2 pl-1 text-[11px]">
-            <span className="text-cyan-700 font-medium">Ambient: {ambientTemp.toFixed(1)}°C</span>
-            <span className="text-slate-400 font-mono">Delta: -19.3°C</span>
+            <span className="text-cyan-700 font-medium">Ambient: {ambientTemp !== null ? `${ambientTemp.toFixed(1)}°C` : '--'}</span>
+            <span className="text-slate-400 font-mono">Delta: {coldTemp !== null && ambientTemp !== null ? `${(coldTemp - ambientTemp).toFixed(1)}°C` : '--'}</span>
           </div>
         </div>
 
@@ -947,8 +1062,8 @@ export default function LiveMonitoringPage() {
           <strong className="text-slate-900">{Math.round(trayPosition)}%</strong>
           <span className="text-slate-300">|</span>
           <span className="text-slate-500">PAYLOAD:</span>
-          <strong className={packageTemp > 8.0 ? 'text-red-600 font-extrabold' : 'text-emerald-700'}>
-            {packageTemp.toFixed(1)}°C
+          <strong className={packageTemp !== null && packageTemp > tempMaxLimit ? 'text-red-600 font-extrabold' : 'text-emerald-700'}>
+            {packageTemp !== null ? `${packageTemp.toFixed(1)}°C` : '--'}
           </strong>
         </div>
       </div>
@@ -1113,7 +1228,7 @@ export default function LiveMonitoringPage() {
                         <span>INSULATED COLD COMPARTMENT</span>
                       </div>
                       <span className="px-1.5 py-0.2 rounded bg-cyan-900/80 border border-cyan-400/40 text-[9px] font-mono text-cyan-200">
-                        {coldTemp.toFixed(1)}°C
+                        {coldTemp !== null ? `${coldTemp.toFixed(1)}°C` : '--'}
                       </span>
                     </div>
 
@@ -1155,7 +1270,7 @@ export default function LiveMonitoringPage() {
                             : 'bg-slate-900/95 text-cyan-300 border-cyan-500/60'
                         }`}>
                           <MapPin className="w-3 h-3 text-red-400" />
-                          <span>PACKAGE HERE: <strong className="font-mono text-white text-xs">{packageTemp.toFixed(1)}°C</strong></span>
+                          <span>PACKAGE HERE: <strong className="font-mono text-white text-xs">{packageTemp !== null ? `${packageTemp.toFixed(1)}°C` : '--'}</strong></span>
                         </div>
                       </div>
 
@@ -1318,72 +1433,78 @@ export default function LiveMonitoringPage() {
             <div className="flex items-center justify-between text-[11px] text-slate-600 px-1 py-1">
               <div className="flex items-center gap-1.5">
                 <span className="w-3 h-0.5 bg-blue-600 rounded"></span>
-                <span>Package Temp ({packageTemp.toFixed(1)}°C)</span>
+                <span>Package Temp ({packageTemp !== null ? `${packageTemp.toFixed(1)}°C` : '--'})</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <span className="w-3 h-0.5 border-t border-dashed border-amber-500"></span>
-                <span>Limit (8.0°C)</span>
+                <span>Limit ({tempMaxLimit.toFixed(1)}°C)</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <span className="w-3 h-0.5 bg-emerald-500 rounded"></span>
-                <span>Cold Chamber (3.2°C)</span>
+                <span>Cold Chamber ({coldTemp !== null ? `${coldTemp.toFixed(1)}°C` : '--'})</span>
               </div>
             </div>
 
             {/* Interactive Trend Chart */}
             <div className="h-44 w-full relative mt-2">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData} margin={{ top: 12, right: 10, left: -25, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                  <XAxis
-                    dataKey="time"
-                    tick={{ fontSize: 10, fill: '#64748b' }}
-                    axisLine={{ stroke: '#cbd5e1' }}
-                    tickLine={false}
-                  />
-                  <YAxis
-                    domain={[2, 11]}
-                    ticks={[2, 4, 6, 8, 10]}
-                    tick={{ fontSize: 10, fill: '#64748b' }}
-                    axisLine={false}
-                    tickLine={false}
-                    unit="°C"
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#ffffff',
-                      borderRadius: '8px',
-                      fontSize: '11px',
-                      border: '1px solid #e2e8f0',
-                      boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
-                    }}
-                  />
-                  <ReferenceLine y={8.0} stroke="#f59e0b" strokeDasharray="4 4" strokeWidth={1.5} label={{ value: 'Limit (8.0°C)', fill: '#d97706', fontSize: 9, position: 'insideTopLeft' }} />
-                  <Line
-                    type="monotone"
-                    dataKey="coldTemp"
-                    stroke="#10b981"
-                    strokeWidth={2}
-                    dot={false}
-                    isAnimationActive={false}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="packageTemp"
-                    stroke="#2563eb"
-                    strokeWidth={2.5}
-                    dot={{ r: 3, fill: '#2563eb' }}
-                    activeDot={{ r: 5 }}
-                    isAnimationActive={false}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+              {chartData.length === 0 ? (
+                <div className="h-full w-full flex items-center justify-center text-xs text-slate-400 border border-dashed border-slate-200 rounded-lg">
+                  Awaiting real-time BLE telemetry packets...
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={chartData} margin={{ top: 12, right: 10, left: -25, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                    <XAxis
+                      dataKey="time"
+                      tick={{ fontSize: 10, fill: '#64748b' }}
+                      axisLine={{ stroke: '#cbd5e1' }}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      domain={[2, 11]}
+                      ticks={[2, 4, 6, 8, 10]}
+                      tick={{ fontSize: 10, fill: '#64748b' }}
+                      axisLine={false}
+                      tickLine={false}
+                      unit="°C"
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: '#ffffff',
+                        borderRadius: '8px',
+                        fontSize: '11px',
+                        border: '1px solid #e2e8f0',
+                        boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
+                      }}
+                    />
+                    <ReferenceLine y={tempMaxLimit} stroke="#f59e0b" strokeDasharray="4 4" strokeWidth={1.5} label={{ value: `Limit (${tempMaxLimit.toFixed(1)}°C)`, fill: '#d97706', fontSize: 9, position: 'insideTopLeft' }} />
+                    <Line
+                      type="monotone"
+                      dataKey="coldTemp"
+                      stroke="#10b981"
+                      strokeWidth={2}
+                      dot={false}
+                      isAnimationActive={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="packageTemp"
+                      stroke="#2563eb"
+                      strokeWidth={2.5}
+                      dot={{ r: 3, fill: '#2563eb' }}
+                      activeDot={{ r: 5 }}
+                      isAnimationActive={false}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
 
               {/* Floating Prediction Triggered Callout Badge */}
               {isBreached && (
                 <div className="absolute top-1 right-[20%] bg-red-50 border border-red-300 text-red-700 px-2.5 py-1 rounded-md text-[10px] font-extrabold shadow-md flex items-center gap-1.5 animate-bounce">
                   <span className="w-2 h-2 rounded-full bg-red-600 animate-ping"></span>
-                  <span>PREDICTION TRIGGERED ({packageTemp.toFixed(1)}°C &rarr; {predictedTemp.toFixed(1)}°C)</span>
+                  <span>PREDICTION TRIGGERED ({packageTemp !== null ? `${packageTemp.toFixed(1)}°C` : '--'} &rarr; {predictedTemp !== null ? `${predictedTemp.toFixed(1)}°C` : '--'})</span>
                 </div>
               )}
             </div>
@@ -1416,17 +1537,17 @@ export default function LiveMonitoringPage() {
                   <div>
                     <div className="text-[11px] font-semibold text-slate-500">Current Temp</div>
                     <div className={`text-xl font-bold font-mono transition-colors ${
-                      packageTemp > 8.0 ? 'text-red-600' : 'text-slate-900'
+                      packageTemp && packageTemp > tempMaxLimit ? 'text-red-600' : 'text-slate-900'
                     }`}>
-                      {packageTemp.toFixed(2)} °C
+                      {packageTemp !== null ? `${packageTemp.toFixed(2)} °C` : '--'}
                     </div>
                   </div>
                   <div>
                     <div className="text-[11px] font-semibold text-slate-500">Predicted ({forecastHorizon})</div>
                     <div className={`text-xl font-black font-mono transition-colors ${
-                      predictedTemp >= 8.0 ? 'text-red-600 animate-pulse' : 'text-emerald-600'
+                      predictedTemp && predictedTemp >= tempMaxLimit ? 'text-red-600 animate-pulse' : 'text-emerald-600'
                     }`}>
-                      {predictedTemp.toFixed(1)} °C
+                      {predictedTemp !== null ? `${predictedTemp.toFixed(1)} °C` : '--'}
                     </div>
                   </div>
                   <div>
@@ -1581,7 +1702,7 @@ export default function LiveMonitoringPage() {
             <div className="py-2 flex items-center justify-between">
               <div>
                 <span className="font-bold text-slate-800 block">Insulated Cold Compartment</span>
-                <span className="text-[10px] text-slate-400 font-mono">+ Reusable Cold Pack ({coldTemp.toFixed(1)}°C)</span>
+                <span className="text-[10px] text-slate-400 font-mono">+ Reusable Cold Pack ({coldTemp !== null ? `${coldTemp.toFixed(1)}°C` : '--'})</span>
               </div>
               <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded text-cyan-800 bg-cyan-100">
                 {trayPosition >= 90 ? 'PROTECTING PKG' : 'STANDBY READY'}
@@ -1601,35 +1722,41 @@ export default function LiveMonitoringPage() {
             </div>
 
             <div className="space-y-2.5 mt-1 max-h-80 overflow-y-auto pr-1">
-              {events.map((ev) => {
-                const dotColor =
-                  ev.type === 'red'
-                    ? 'bg-red-600 animate-ping'
-                    : ev.type === 'blue'
-                    ? 'bg-blue-600'
-                    : ev.type === 'amber'
-                    ? 'bg-amber-500'
-                    : 'bg-emerald-500';
+              {events.length === 0 ? (
+                <div className="py-12 text-center text-xs text-slate-400">
+                  No incident events or alerts recorded for this consignment.
+                </div>
+              ) : (
+                events.map((ev) => {
+                  const dotColor =
+                    ev.type === 'red'
+                      ? 'bg-red-600 animate-ping'
+                      : ev.type === 'blue'
+                      ? 'bg-blue-600'
+                      : ev.type === 'amber'
+                      ? 'bg-amber-500'
+                      : 'bg-emerald-500';
 
-                return (
-                  <div
-                    key={ev.id}
-                    className={`flex items-start gap-2.5 text-xs p-1.5 rounded transition-colors ${
-                      ev.isNew ? 'bg-blue-50/70 border border-blue-200' : ''
-                    }`}
-                  >
-                    <span className="font-mono text-slate-400 text-[11px] shrink-0 w-13">
-                      {ev.time}
-                    </span>
-                    <div className="flex items-center gap-1.5 mt-1">
-                      <span className={`w-2 h-2 rounded-full ${dotColor} shrink-0`}></span>
+                  return (
+                    <div
+                      key={ev.id}
+                      className={`flex items-start gap-2.5 text-xs p-1.5 rounded transition-colors ${
+                        ev.isNew ? 'bg-blue-50/70 border border-blue-200' : ''
+                      }`}
+                    >
+                      <span className="font-mono text-slate-400 text-[11px] shrink-0 w-13">
+                        {ev.time}
+                      </span>
+                      <div className="flex items-center gap-1.5 mt-1">
+                        <span className={`w-2 h-2 rounded-full ${dotColor} shrink-0`}></span>
+                      </div>
+                      <span className="text-slate-800 font-medium leading-snug">
+                        {ev.message}
+                      </span>
                     </div>
-                    <span className="text-slate-800 font-medium leading-snug">
-                      {ev.message}
-                    </span>
-                  </div>
-                );
-              })}
+                  );
+                })
+              )}
             </div>
           </div>
 

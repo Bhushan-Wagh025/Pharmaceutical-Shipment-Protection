@@ -245,7 +245,7 @@ class DecisionEngine:
             "decision": decision,
             "reason": reason,
             "threshold": temp_limit,
-            "predicted_temp": round(predicted_temp, 2),
+            "predicted_temp": round(predicted_temp, 2) if predicted_temp is not None else None,
             "current_temp": round(current_temp, 2),
             "action_taken": action_taken,
             "tray_state": tray.state.value if (tray and hasattr(tray.state, 'value')) else (tray.state if tray else "N/A"),

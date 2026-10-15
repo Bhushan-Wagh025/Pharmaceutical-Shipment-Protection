@@ -3,11 +3,13 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
-import { Shield, Bell, Activity, LogOut } from 'lucide-react';
+import { api } from '@/lib/api';
+import { Shield, Bell, Activity, LogOut, User as UserIcon } from 'lucide-react';
 
 export function Navbar() {
   const { user, logout } = useAuth();
   const [currentTime, setCurrentTime] = useState<string>('');
+  const [hasUnreadAlerts, setHasUnreadAlerts] = useState<boolean>(false);
 
   useEffect(() => {
     const update = () => {
@@ -21,9 +23,17 @@ export function Navbar() {
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    api.getAlerts({ unack_only: true, limit: 1 })
+      .then((res: any) => {
+        setHasUnreadAlerts(Array.isArray(res) && res.length > 0);
+      })
+      .catch(() => setHasUnreadAlerts(false));
+  }, []);
+
   const initials = user?.full_name
-    ? user.full_name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
-    : 'BW';
+    ? user.full_name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()
+    : 'U';
 
   return (
     <header className="h-16 bg-white border-b border-slate-200 sticky top-0 z-30 flex items-center justify-between px-6">
@@ -60,18 +70,20 @@ export function Navbar() {
         </div>
 
         {/* Live Date / Time */}
-        <div className="hidden lg:block text-xs font-medium text-slate-600 pl-3 border-l border-slate-200">
-          {currentTime || 'Oct 10, 2024  14:32:18'}
+        <div className="hidden lg:block text-xs font-medium text-slate-600 pl-3 border-l border-slate-200 font-mono">
+          {currentTime || '--'}
         </div>
 
-        {/* Notifications with Red Badge */}
+        {/* Notifications with Dynamic Red Badge */}
         <Link
           href="/alerts"
           className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-full transition-colors relative"
           title="Alerts & Events"
         >
           <Bell className="w-4 h-4" />
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500 ring-2 ring-white"></span>
+          {hasUnreadAlerts && (
+            <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500 ring-2 ring-white animate-pulse"></span>
+          )}
         </Link>
 
         {/* User Avatar */}
@@ -94,10 +106,11 @@ export function Navbar() {
         ) : (
           <Link
             href="/login"
-            className="w-8 h-8 rounded-full bg-blue-100 border border-blue-200 text-blue-700 font-bold text-xs flex items-center justify-center hover:bg-blue-200 transition-colors shadow-xs"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 font-semibold text-xs transition-colors shadow-xs"
             title="Sign In"
           >
-            BW
+            <UserIcon className="w-3.5 h-3.5 text-blue-600" />
+            <span>Sign In</span>
           </Link>
         )}
       </div>

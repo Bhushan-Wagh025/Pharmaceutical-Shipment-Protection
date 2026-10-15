@@ -39,19 +39,26 @@ class GAOBLEGatewayAdapter(BaseGatewayAdapter):
 
     def _build_url(self, endpoint: str) -> str:
         clean_endpoint = "/" + endpoint.lstrip("/")
-        return f"{self.host_url}{self.api_base_path}{clean_endpoint}"
+        base = self.api_base_path.rstrip("/")
+        if base and clean_endpoint.startswith(base):
+            return f"{self.host_url}{clean_endpoint}"
+        return f"{self.host_url}{base}{clean_endpoint}"
 
     def _get_headers(self) -> Dict[str, str]:
         headers = {
-            "User-Agent": "PharmaProtect-AIoT/1.0",
-            "Accept": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            "Accept": "application/json, text/plain, */*",
         }
-        if self.auth_method == "API_KEY" and self.api_key:
+        if self.auth_method == "COOKIE" and self.api_key:
+            headers["Cookie"] = self.api_key
+        elif self.auth_method == "API_KEY" and self.api_key:
             headers["X-API-Key"] = self.api_key
         elif self.auth_method == "BEARER_TOKEN" and self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         elif self.auth_method == "BASIC" and self.api_key:
             headers["Authorization"] = f"Basic {self.api_key}"
+        elif self.api_key and ("=" in self.api_key or "cookie" in (self.auth_method or "").lower()):
+            headers["Cookie"] = self.api_key
         return headers
 
     def connect(self) -> bool:
@@ -60,7 +67,7 @@ class GAOBLEGatewayAdapter(BaseGatewayAdapter):
         return self._is_connected
 
     def test_connection(self) -> Dict[str, Any]:
-        """Tests live reachability to the physical gateway while enforcing SSRF protection."""
+        """Tests live reachability to the physical gateway or virtual station while enforcing SSRF protection."""
         if not self.host_url:
             return {
                 "success": False,
@@ -86,39 +93,87 @@ class GAOBLEGatewayAdapter(BaseGatewayAdapter):
             }
 
         start_time = time.perf_counter()
-        target_url = self._build_url("/status")
+        candidate_endpoints = ["/gateway/status", "/status", "/health", "/api/v1/health", "/api/v1/station"]
         try:
-            with httpx.Client(timeout=self.timeout_seconds, verify=self.verify_ssl) as client:
-                response = client.get(target_url, headers=self._get_headers())
-                latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
+            with httpx.Client(timeout=self.timeout_seconds, verify=self.verify_ssl, follow_redirects=True) as client:
+                last_response = None
+                timed_out = False
+                for ep in candidate_endpoints:
+                    target_url = self._build_url(ep)
+                    try:
+                        response = client.get(target_url, headers=self._get_headers())
+                        last_response = response
+                        latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
 
-                if response.status_code in (200, 204):
-                    self._is_connected = True
-                    self._last_communication = datetime.utcnow()
-                    self._last_error = None
+                        if response.status_code in (200, 204):
+                            # Verify if response is not an HTML redirect/auth interstitial page
+                            content_type = response.headers.get("content-type", "")
+                            if "text/html" in content_type and ("Cookie check" in response.text or "Sign in" in response.text or "_aistudio" in response.text):
+                                self._is_connected = False
+                                self._last_error = f"Authentication Required: Endpoint returned Google OAuth / Cookie check page (HTTP {response.status_code})"
+                                return {
+                                    "success": False,
+                                    "latency_ms": latency_ms,
+                                    "details": "Google Cloud Run / AI Studio authentication check returned HTML instead of API data.",
+                                    "error": self._last_error,
+                                    "troubleshooting": (
+                                        "This Cloud Run Dev service requires Google session authorization. "
+                                        "Configure Authentication Method as BEARER_TOKEN or COOKIE with a valid session token, "
+                                        "or enable unauthenticated invocations on the Cloud Run service."
+                                    )
+                                }
+
+                            self._is_connected = True
+                            self._last_communication = datetime.utcnow()
+                            self._last_error = None
+                            return {
+                                "success": True,
+                                "latency_ms": latency_ms,
+                                "details": f"Gateway online at {self.host_url}{ep} (HTTP {response.status_code}, {latency_ms} ms).",
+                                "error": None,
+                                "troubleshooting": None
+                            }
+                    except httpx.TimeoutException:
+                        timed_out = True
+                        break
+                    except httpx.HTTPError:
+                        continue
+
+                latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
+                if timed_out:
+                    self._is_connected = False
+                    self._last_error = f"Connection timed out after {self.timeout_seconds}s connecting to {self.host_url}"
                     return {
-                        "success": True,
+                        "success": False,
                         "latency_ms": latency_ms,
-                        "details": f"GAO Gateway online at {self.host_url} (HTTP {response.status_code}, {latency_ms} ms).",
-                        "error": None,
-                        "troubleshooting": None
+                        "details": "Connection timed out.",
+                        "error": self._last_error,
+                        "troubleshooting": (
+                            "1. Confirm the gateway device is powered on.\n"
+                            "2. Verify IP address and port reachability from the application host.\n"
+                            "3. Check for intermediate firewalls or network access control list (ACL) blocks."
+                        )
                     }
-                else:
+                if response:
                     self._is_connected = False
                     self._last_error = f"Gateway responded with HTTP {response.status_code}: {response.text[:150]}"
-                    if response.status_code in (301, 302, 307, 308) or "_aistudio" in response.text or "accounts.google.com" in response.text:
-                        troubleshooting = (
-                            "Gateway endpoint returned an authentication redirect (Google Cloud IAP / AI Studio authentication required). "
-                            "Please provide a Bearer Token or API Key in Gateway Settings, or configure the Cloud Run service to allow unauthenticated invocations."
-                        )
-                    else:
-                        troubleshooting = "Verify the authentication method and API key credentials in Gateway Settings."
+                    troubleshooting = (
+                        "Verify the authentication method and API key credentials in Gateway Settings."
+                    )
                     return {
                         "success": False,
                         "latency_ms": latency_ms,
                         "details": f"HTTP {response.status_code} received from gateway.",
                         "error": self._last_error,
                         "troubleshooting": troubleshooting
+                    }
+                else:
+                    return {
+                        "success": False,
+                        "latency_ms": latency_ms,
+                        "details": "No gateway status endpoint responded.",
+                        "error": "NO_ENDPOINT_RESPONDED",
+                        "troubleshooting": "Verify host URL and API base path."
                     }
         except httpx.ConnectTimeout:
             latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
@@ -159,70 +214,95 @@ class GAOBLEGatewayAdapter(BaseGatewayAdapter):
         if not is_safe:
             return []
 
-        target_url = self._build_url("/ble/devices")
+        candidate_endpoints = ["/gateway/devices", "/ble/devices", "/devices"]
         try:
-            with httpx.Client(timeout=self.timeout_seconds, verify=self.verify_ssl) as client:
-                res = client.get(target_url, headers=self._get_headers())
-                if res.status_code == 200:
-                    data = res.json()
-                    devices = []
-                    # Standard GAO / KSensor list format
-                    raw_list = data if isinstance(data, list) else data.get("devices", [])
-                    for item in raw_list:
-                        devices.append({
-                            "device_mac": item.get("mac") or item.get("device_mac"),
-                            "name": item.get("name", "BLE Environmental Beacon"),
-                            "temperature": item.get("temperature"),
-                            "battery": item.get("battery", 95.0),
-                            "rssi": item.get("rssi", -65),
-                            "last_seen": item.get("timestamp") or datetime.utcnow().isoformat()
-                        })
-                    self._last_communication = datetime.utcnow()
-                    return devices
+            with httpx.Client(timeout=self.timeout_seconds, verify=self.verify_ssl, follow_redirects=True) as client:
+                for ep in candidate_endpoints:
+                    target_url = self._build_url(ep)
+                    try:
+                        res = client.get(target_url, headers=self._get_headers())
+                        if res.status_code == 200:
+                            content_type = res.headers.get("content-type", "")
+                            if "text/html" in content_type:
+                                continue
+                            data = res.json()
+                            devices = []
+                            raw_list = data if isinstance(data, list) else (data.get("devices") or data.get("data") or [])
+                            for item in raw_list:
+                                if not isinstance(item, dict):
+                                    continue
+                                mac = item.get("device_id") or item.get("device_mac") or item.get("mac") or item.get("id")
+                                if not mac:
+                                    continue
+                                temp_val = item.get("temperature_c") if item.get("temperature_c") is not None else item.get("temperature")
+                                devices.append({
+                                    "device_mac": mac,
+                                    "name": item.get("name") or item.get("probe_type") or f"BLE Sensor Tag ({mac})",
+                                    "temperature": float(temp_val) if temp_val is not None else None,
+                                    "battery": float(item.get("battery_percent") or item.get("battery") or 95.0),
+                                    "rssi": int(item.get("signal_rssi_dbm") or item.get("rssi") or -64),
+                                    "last_seen": item.get("measured_at") or item.get("timestamp") or datetime.utcnow().isoformat()
+                                })
+                            if devices:
+                                self._last_communication = datetime.utcnow()
+                                return devices
+                    except Exception:
+                        continue
         except Exception as e:
             logger.warning(f"Error querying GAO BLE devices from {self.host_url}: {e}")
         return []
 
     def fetch_telemetry(self) -> List[Dict[str, Any]]:
-        """Fetches live telemetry readings from the gateway."""
+        """Fetches live telemetry readings from the gateway or virtual station."""
         if not self.host_url:
             return []
         is_safe, _ = validate_gateway_url(self.host_url)
         if not is_safe:
             return []
 
-        target_url = self._build_url("/telemetry")
+        candidate_endpoints = ["/telemetry/latest", "/telemetry", "/telemetry/history"]
         try:
-            with httpx.Client(timeout=self.timeout_seconds, verify=self.verify_ssl) as client:
-                res = client.get(target_url, headers=self._get_headers())
-                if res.status_code == 200:
-                    payload = res.json()
-                    self._last_communication = datetime.utcnow()
-                    readings = []
-                    if isinstance(payload, dict):
-                        raw_items = payload.get("data") or payload.get("telemetry") or payload.get("readings") or payload.get("results") or [payload]
-                    elif isinstance(payload, list):
-                        raw_items = payload
-                    else:
-                        raw_items = []
+            with httpx.Client(timeout=self.timeout_seconds, verify=self.verify_ssl, follow_redirects=True) as client:
+                for ep in candidate_endpoints:
+                    target_url = self._build_url(ep)
+                    try:
+                        res = client.get(target_url, headers=self._get_headers())
+                        if res.status_code == 200:
+                            content_type = res.headers.get("content-type", "")
+                            if "text/html" in content_type:
+                                continue
+                            payload = res.json()
+                            self._last_communication = datetime.utcnow()
+                            readings = []
+                            if isinstance(payload, dict):
+                                raw_items = payload.get("data") or payload.get("telemetry") or payload.get("readings") or payload.get("results") or [payload]
+                            elif isinstance(payload, list):
+                                raw_items = payload
+                            else:
+                                raw_items = []
 
-                    for r in raw_items:
-                        if not isinstance(r, dict):
-                            continue
-                        temp_val = r.get("temperature") if r.get("temperature") is not None else r.get("temp")
-                        if temp_val is None:
-                            continue
-                        readings.append({
-                            "device_mac": r.get("device_mac") or r.get("mac") or r.get("device_id") or r.get("id") or "BLE-TAG-01",
-                            "temperature": float(temp_val),
-                            "battery": float(r.get("battery", 95.0)),
-                            "humidity": float(r.get("humidity", 45.0)),
-                            "rssi": int(r.get("rssi", -65)),
-                            "data_source": "LIVE",
-                            "gateway_eui": self.gateway_eui,
-                            "timestamp": r.get("timestamp") or datetime.utcnow().isoformat()
-                        })
-                    return readings
+                            for r in raw_items:
+                                if not isinstance(r, dict):
+                                    continue
+                                temp_val = r.get("temperature_c") if r.get("temperature_c") is not None else (r.get("temperature") if r.get("temperature") is not None else r.get("temp"))
+                                if temp_val is None:
+                                    continue
+                                readings.append({
+                                    "device_mac": r.get("device_id") or r.get("device_mac") or r.get("mac") or "PROBE-BLE-T901",
+                                    "temperature": round(float(temp_val), 2),
+                                    "battery": float(r.get("battery_percent") or r.get("battery") or 95.0),
+                                    "humidity": float(r.get("humidity", 45.0)),
+                                    "rssi": int(r.get("signal_rssi_dbm") or r.get("rssi") or -64),
+                                    "data_source": r.get("source") or "LIVE",
+                                    "gateway_eui": r.get("gateway_id") or self.gateway_eui,
+                                    "tray_state": r.get("tray_state"),
+                                    "tray_position": r.get("tray_position_percent"),
+                                    "timestamp": r.get("measured_at") or r.get("timestamp") or datetime.utcnow().isoformat()
+                                })
+                            if readings:
+                                return readings
+                    except Exception:
+                        continue
         except Exception as e:
             logger.warning(f"Error fetching GAO telemetry: {e}")
             self._last_error = str(e)

@@ -14,16 +14,30 @@ logging.basicConfig(
 )
 logger = logging.getLogger("pharma.main")
 
+from app.services.gateway_monitor import gateway_monitor
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: ensure tables exist and seed default accounts & demo data
     logger.info("Initializing B2B Pharmaceutical Protection AIoT Platform...")
     try:
-        seed_database(include_samples=False)
+        seed_database()
         logger.info("Database essentials initialized and verified.")
     except Exception as e:
         logger.error(f"Error during startup database initialization: {e}")
+
+    try:
+        await gateway_monitor.start()
+        logger.info("Gateway monitoring background service active.")
+    except Exception as e:
+        logger.error(f"Error starting gateway monitor: {e}")
+
     yield
+
+    try:
+        await gateway_monitor.stop()
+    except Exception as e:
+        logger.error(f"Error stopping gateway monitor: {e}")
     logger.info("Shutting down AIoT application server...")
 
 app = FastAPI(

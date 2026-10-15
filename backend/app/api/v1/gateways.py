@@ -1,6 +1,7 @@
 import json
 import uuid
 import logging
+import asyncio
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -15,6 +16,7 @@ from app.services.ssrf_validator import validate_gateway_url
 from app.services.encryption_service import encrypt_credential, mask_credential
 from app.services.audit_service import AuditService
 from app.adapters.factory import get_gateway_adapter
+from app.services.gateway_monitor import gateway_monitor
 
 logger = logging.getLogger("pharma.gateways_api")
 router = APIRouter(prefix="/gateways", tags=["Gateways"])
@@ -311,6 +313,15 @@ def start_gateway_monitoring(
         details=f"Monitoring started for gateway {gw.name}",
         user=current_user
     )
+
+    # Trigger immediate poll asynchronously if event loop is running
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(gateway_monitor.poll_all_active_gateways())
+    except RuntimeError:
+        pass  # No running event loop in current context
+    except Exception as e:
+        logger.warning(f"Could not trigger immediate poll for gateway {gw.id}: {e}")
 
     return {"message": "Gateway monitoring started", "is_monitoring": True}
 

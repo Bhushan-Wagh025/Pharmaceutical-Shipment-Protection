@@ -14,6 +14,11 @@ export function useShipmentWebSocket(shipmentId: string | number, onMessage?: (d
   const [isConnected, setIsConnected] = useState(false);
   const [lastMessage, setLastMessage] = useState<any>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const onMessageRef = useRef(onMessage);
+
+  useEffect(() => {
+    onMessageRef.current = onMessage;
+  }, [onMessage]);
 
   const connect = useCallback(() => {
     if (!shipmentId) return;
@@ -31,7 +36,7 @@ export function useShipmentWebSocket(shipmentId: string | number, onMessage?: (d
         try {
           const data = JSON.parse(event.data);
           setLastMessage(data);
-          if (onMessage) onMessage(data);
+          if (onMessageRef.current) onMessageRef.current(data);
         } catch {
           // Non-json ping/pong message
         }
@@ -39,7 +44,7 @@ export function useShipmentWebSocket(shipmentId: string | number, onMessage?: (d
 
       socket.onclose = () => {
         setIsConnected(false);
-        // Retry connection after 3 seconds with auto-reconnect
+        // Retry connection after 3 seconds with auto-reconnect if still active
         setTimeout(() => {
           if (wsRef.current === socket) {
             connect();
@@ -53,7 +58,7 @@ export function useShipmentWebSocket(shipmentId: string | number, onMessage?: (d
     } catch {
       setIsConnected(false);
     }
-  }, [shipmentId, onMessage]);
+  }, [shipmentId]);
 
   useEffect(() => {
     connect();
@@ -71,6 +76,11 @@ export function useShipmentWebSocket(shipmentId: string | number, onMessage?: (d
 export function useDashboardWebSocket(onMessage?: (data: any) => void) {
   const [isConnected, setIsConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
+  const onMessageRef = useRef(onMessage);
+
+  useEffect(() => {
+    onMessageRef.current = onMessage;
+  }, [onMessage]);
 
   const connect = useCallback(() => {
     const wsUrl = `${getWsBaseUrl()}/ws/dashboard`;
@@ -82,18 +92,22 @@ export function useDashboardWebSocket(onMessage?: (data: any) => void) {
       socket.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          if (onMessage) onMessage(data);
+          if (onMessageRef.current) onMessageRef.current(data);
         } catch {}
       };
       socket.onclose = () => {
         setIsConnected(false);
-        setTimeout(() => connect(), 3000);
+        setTimeout(() => {
+          if (wsRef.current === socket) {
+            connect();
+          }
+        }, 3000);
       };
       socket.onerror = () => socket.close();
     } catch {
       setIsConnected(false);
     }
-  }, [onMessage]);
+  }, []);
 
   useEffect(() => {
     connect();

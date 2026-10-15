@@ -28,6 +28,15 @@ export function AIForecastChart({
   horizonMinutes = 15,
   historyData = [],
 }: ForecastChartProps) {
+  if (currentTemp === null || currentTemp === undefined || predictedTemp === null || predictedTemp === undefined) {
+    return (
+      <div className="h-64 flex flex-col items-center justify-center text-xs text-slate-400 border border-dashed border-slate-200 rounded-lg p-6 text-center space-y-1">
+        <span className="font-semibold text-slate-600">AI Forecast Trajectory Unavailable</span>
+        <span>Awaiting valid sensor telemetry readings to compute trajectory projection.</span>
+      </div>
+    );
+  }
+
   // Build projection dataset merging recent history + projected points
   const recent = historyData.slice(-6);
   const chartPoints: any[] = [];

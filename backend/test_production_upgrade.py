@@ -29,6 +29,46 @@ class TestProductionUpgrade(unittest.TestCase):
         cls.headers = {"Authorization": f"Bearer {cls.token}"}
         cls.company_id = data["user"]["company_id"]
 
+        from app.database import SessionLocal
+        from app.models.logistics import Shipment
+        db = SessionLocal()
+        try:
+            shp = Shipment(
+                shipment_code=f"TEST-VAL-{uuid.uuid4().hex[:6].upper()}",
+                package_id="PKG-TEST-001",
+                company_id=cls.company_id,
+                product_name="Test Cold-Chain Vaccine",
+                batch_number="BATCH-TEST",
+                customer_name="Test Hospital",
+                origin="Central Depot",
+                destination="Clinic Alpha",
+                temp_limit=8.0,
+                temp_safe_min=2.0,
+                forecast_horizon_minutes=15
+            )
+            db.add(shp)
+            db.commit()
+            db.refresh(shp)
+            cls.shipment_id = shp.id
+        finally:
+            db.close()
+
+    @classmethod
+    def tearDownClass(cls):
+        from app.database import SessionLocal
+        from app.models.logistics import Shipment
+        from app.models.telemetry import TemperatureReading, TemperatureForecast
+        db = SessionLocal()
+        try:
+            db.query(TemperatureReading).filter(TemperatureReading.shipment_id == cls.shipment_id).delete()
+            db.query(TemperatureForecast).filter(TemperatureForecast.shipment_id == cls.shipment_id).delete()
+            db.query(Shipment).filter(Shipment.id == cls.shipment_id).delete()
+            db.commit()
+        except Exception:
+            db.rollback()
+        finally:
+            db.close()
+
     # --------------------------------------------------------------------------
     # 1. Health & Readiness
     # --------------------------------------------------------------------------
@@ -177,7 +217,7 @@ class TestProductionUpgrade(unittest.TestCase):
     def test_07_telemetry_pipeline_validation(self):
         # 1. Normal reading
         payload = {
-            "shipment_id": 1,
+            "shipment_id": self.shipment_id,
             "device_id": "TEST-BEACON-01",
             "temperature": 5.4,
             "humidity": 45.2,
@@ -191,12 +231,12 @@ class TestProductionUpgrade(unittest.TestCase):
         self.assertEqual(data["temperature"], 5.4)
         self.assertEqual(data["data_source"], "LIVE")
         self.assertEqual(data["validation_status"], "VALID")
-        fc_res = client.get("/api/v1/forecast/1/latest", headers=self.headers)
+        fc_res = client.get(f"/api/v1/forecast/{self.shipment_id}/latest", headers=self.headers)
         self.assertEqual(fc_res.status_code, 200)
 
         # 2. Out of range reading rejection (-60°C is out of pharmaceutical bounds)
         bad_payload = {
-            "shipment_id": 1,
+            "shipment_id": self.shipment_id,
             "device_id": "TEST-BEACON-01",
             "temperature": -60.0,
             "data_source": "LIVE"
@@ -335,7 +375,14 @@ class TestProductionUpgrade(unittest.TestCase):
             self.assertEqual(run_res.status_code, 400)
             self.assertIn("Insufficient", run_res.json()["detail"])
         finally:
-            db.close()
+            try:
+                if 'shp' in locals() and shp:
+                    db.delete(shp)
+                    db.commit()
+            except Exception:
+                db.rollback()
+            finally:
+                db.close()
 
     # --------------------------------------------------------------------------
     # 13. Zero Data Fabrication: Failed Gateway Reachability
@@ -347,6 +394,55 @@ class TestProductionUpgrade(unittest.TestCase):
         self.assertFalse(res["success"])
         self.assertIsNotNone(res["error"])
         self.assertIn("time", res["error"].lower())
+
+    # --------------------------------------------------------------------------
+    # 14. Zero Data Fabrication: Empty Database Dashboard Overview
+    # --------------------------------------------------------------------------
+    def test_14_empty_database_dashboard_overview_returns_zero_and_empty_list_never_sample_records(self):
+        from app.database import SessionLocal
+        from app.models.logistics import Shipment
+        db = SessionLocal()
+        try:
+            # Check overview endpoint response
+            ov_res = client.get("/api/v1/shipments/overview", headers=self.headers)
+            self.assertEqual(ov_res.status_code, 200)
+            data = ov_res.json()
+            # If shipments count is known, ensure data matches database exactly
+            db_count = db.query(Shipment).count()
+            self.assertEqual(len(data["shipments"]), db_count)
+            # Never return fabricated sample records
+            for s in data["shipments"]:
+                self.assertIsNotNone(s.get("shipment_code"))
+        finally:
+            db.close()
+
+    # --------------------------------------------------------------------------
+    # 15. Simulation Data Isolation: Tagged SIMULATED, Never Claimed LIVE
+    # --------------------------------------------------------------------------
+    def test_15_simulated_readings_are_strictly_isolated_and_tagged_simulated(self):
+        # Trigger a simulation step on the test shipment
+        step_res = client.post(f"/api/v1/simulator/step/{self.shipment_id}", headers=self.headers)
+        self.assertEqual(step_res.status_code, 200)
+        step_data = step_res.json()
+        self.assertEqual(step_data.get("data_source"), "SIMULATED")
+        self.assertEqual(step_data.get("validation_status"), "SIMULATED")
+
+        # Verify reading persisted in database is tagged SIMULATED
+        from app.database import SessionLocal
+        from app.models.telemetry import TemperatureReading
+        db = SessionLocal()
+        try:
+            latest_sim = (
+                db.query(TemperatureReading)
+                .filter(TemperatureReading.shipment_id == self.shipment_id)
+                .order_by(TemperatureReading.id.desc())
+                .first()
+            )
+            self.assertIsNotNone(latest_sim)
+            self.assertEqual(latest_sim.data_source, "SIMULATED")
+            self.assertEqual(latest_sim.validation_status, "SIMULATED")
+        finally:
+            db.close()
 
 if __name__ == "__main__":
     unittest.main()

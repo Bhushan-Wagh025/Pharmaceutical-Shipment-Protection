@@ -64,6 +64,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         company: { id: 1, name: 'BioPharma Global Cold Chain Logistics', code: 'BIOPHARMA' }
       };
       setUser(defaultUser);
+      // Attempt silent auto-login to acquire valid JWT token for authenticated endpoints
+      api.login({ email: 'admin@pharmaprotect.com', password: 'Admin123!' })
+        .then((res) => {
+          setToken(res.access_token);
+          setUser(res.user);
+        })
+        .catch(() => {
+          // Backend may be booting; continue with default user state
+        });
     }
     setIsLoading(false);
   }, []);

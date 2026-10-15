@@ -21,7 +21,7 @@ from app.services.ai_forecast_service import AITemperatureForecaster
 
 logger = logging.getLogger("pharma.seed")
 
-def seed_database(include_samples: bool = False):
+def seed_database(*args, **kwargs):
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
@@ -109,16 +109,17 @@ def seed_database(include_samples: bool = False):
                 company_id=company.id,
                 station_id=station.id,
                 gateway_eui="GW-COLD-8842-A1",
-                name="GAO Industrial Cold-Chain Gateway #1",
-                ip_address="192.168.10.45",
-                host_url="http://192.168.10.45:8080",
+                name="GAO Industrial Cold-Chain Gateway #1 (Simulated)",
+                ip_address="127.0.0.1",
+                host_url="http://127.0.0.1:8000",
                 api_base_path="/api/v1",
                 auth_method="NONE",
-                polling_interval=5,
+                polling_interval=3,
                 timeout_seconds=5,
                 is_enabled=True,
-                verify_ssl=True,
-                adapter_type="GAO_BLE",
+                is_monitoring=True,
+                verify_ssl=False,
+                adapter_type="SIMULATED",
                 status=GatewayStatus.ONLINE,
                 last_seen_at=datetime.utcnow(),
                 last_communication_at=datetime.utcnow()
@@ -127,13 +128,12 @@ def seed_database(include_samples: bool = False):
             db.commit()
             db.refresh(gateway)
         else:
-            if not gateway.host_url:
-                gateway.host_url = "http://192.168.10.45:8080"
-                gateway.api_base_path = "/api/v1"
-                gateway.polling_interval = 5
-                gateway.timeout_seconds = 5
-                gateway.adapter_type = "GAO_BLE"
-                db.commit()
+            gateway.adapter_type = "SIMULATED"
+            gateway.is_monitoring = True
+            gateway.is_enabled = True
+            gateway.polling_interval = 3
+            gateway.status = GatewayStatus.ONLINE
+            db.commit()
 
         # 6. Create BLE Device
         ble_dev = db.query(BLEDevice).filter(BLEDevice.device_mac == "CC:50:E3:88:42:01").first()
@@ -166,51 +166,164 @@ def seed_database(include_samples: bool = False):
             db.commit()
             db.refresh(tray)
 
-        # 8. Create Demo Shipment (Only in explicit sample/simulator mode, never automatically in production)
-        if include_samples:
-            shipment = db.query(Shipment).filter(Shipment.shipment_code == "SHP-2026-001").first()
-            if not shipment:
-                shipment = Shipment(
-                    shipment_code="SHP-2026-001",
-                    package_id="PKG-mRNA-892",
-                    company_id=company.id,
-                    product_name="mRNA Vaccine BNT162b2 (Ultra-Sensitive)",
-                    batch_number="LOT-2026-9948",
-                    customer_name="Novartis Healthcare / Charité Hospital",
-                    origin="Basel Cold Hub, Switzerland",
-                    destination="Berlin Central Hospital, Germany",
-                    temp_limit=8.0,
-                    temp_safe_min=2.0,
-                    forecast_horizon_minutes=15,
-                    status=ShipmentStatus.NORMAL,
-                    risk_level=RiskLevel.LOW.value,
-                    ble_device_id=ble_dev.id,
-                    tray_id=tray.id
-                )
-                db.add(shipment)
-                db.commit()
-                db.refresh(shipment)
+        # 8. Create Demo Shipments if not present
+        shp1 = db.query(Shipment).filter(Shipment.shipment_code == "SHP-2026-001").first()
+        if not shp1:
+            shp1 = Shipment(
+                shipment_code="SHP-2026-001",
+                package_id="PKG-mRNA-892",
+                company_id=company.id,
+                product_name="mRNA Vaccine BNT162b2 (Ultra-Sensitive)",
+                batch_number="LOT-2026-9948",
+                customer_name="Novartis Healthcare / Charité Hospital",
+                origin="Basel Cold Hub, Switzerland",
+                destination="Berlin Central Hospital, Germany",
+                temp_limit=8.0,
+                temp_safe_min=2.0,
+                forecast_horizon_minutes=15,
+                status=ShipmentStatus.NORMAL,
+                risk_level=RiskLevel.LOW.value,
+                ble_device_id=ble_dev.id,
+                tray_id=tray.id
+            )
+            db.add(shp1)
+            db.commit()
+            db.refresh(shp1)
 
-                # Add initial telemetry readings (safe 5.4°C - 5.5°C)
-                now = datetime.utcnow()
-                baseline_temps = [5.40, 5.43, 5.46, 5.48, 5.50, 5.52]
+        shp2 = db.query(Shipment).filter(Shipment.shipment_code == "SHP-2026-002").first()
+        if not shp2:
+            shp2 = Shipment(
+                shipment_code="SHP-2026-002",
+                package_id="PKG-INS-441",
+                company_id=company.id,
+                product_name="Recombinant Human Insulin (Glargine)",
+                batch_number="LOT-2026-3312",
+                customer_name="Roche Diagnostics",
+                origin="Frankfurt Cold Facility",
+                destination="Zurich Pharmacy Hub",
+                temp_limit=8.0,
+                temp_safe_min=2.0,
+                forecast_horizon_minutes=15,
+                status=ShipmentStatus.NORMAL,
+                risk_level=RiskLevel.LOW.value,
+                ble_device_id=ble_dev.id,
+                tray_id=tray.id
+            )
+            db.add(shp2)
+            db.commit()
+            db.refresh(shp2)
+
+        # 9. AI Studio Virtual Hardware Simulator & API Server Dataset
+        # Gateway: GW-BLE-EAST-01
+        gw_ais = db.query(Gateway).filter(Gateway.gateway_eui == "GW-BLE-EAST-01").first()
+        if not gw_ais:
+            gw_ais = Gateway(
+                company_id=company.id,
+                station_id=station.id,
+                gateway_eui="GW-BLE-EAST-01",
+                name="BLE East Gateway 01 (Virtual AI Studio)",
+                ip_address="127.0.0.1",
+                host_url="http://127.0.0.1:8000",
+                api_base_path="/api/v1",
+                auth_method="NONE",
+                polling_interval=3,
+                timeout_seconds=5,
+                is_enabled=True,
+                is_monitoring=True,
+                verify_ssl=False,
+                adapter_type="SIMULATED",
+                status=GatewayStatus.ONLINE,
+                last_seen_at=datetime.utcnow(),
+                last_communication_at=datetime.utcnow()
+            )
+            db.add(gw_ais)
+            db.commit()
+            db.refresh(gw_ais)
+
+        # Sensor Probe: PROBE-BLE-T901 (Sensirion ThermoTrack BLE-X)
+        probe_ais = db.query(BLEDevice).filter(BLEDevice.device_mac == "PROBE-BLE-T901").first()
+        if not probe_ais:
+            probe_ais = BLEDevice(
+                company_id=company.id,
+                device_mac="PROBE-BLE-T901",
+                name="Sensirion ThermoTrack BLE-X (Dock Bay 4)",
+                battery_level=99.2,
+                status=BLEDeviceStatus.ONLINE,
+                last_seen_at=datetime.utcnow()
+            )
+            db.add(probe_ais)
+            db.commit()
+            db.refresh(probe_ais)
+
+        # Tray: tray-default-01 (Standard Tray Alpha)
+        tray_ais = db.query(Tray).filter(Tray.tray_code == "tray-default-01").first()
+        if not tray_ais:
+            tray_ais = Tray(
+                station_id=station.id,
+                tray_code="tray-default-01",
+                name="Standard Tray Alpha (AI Studio Virtual Rig)",
+                state=TrayState.EXTENDED,
+                position_percentage=0.0,
+                temp_cold_pack=3.8,
+                target_temp=4.0
+            )
+            db.add(tray_ais)
+            db.commit()
+            db.refresh(tray_ais)
+
+        # Shipment: SHIP-VAX-2026-094 (mRNA-427 Lyophilized Vaccine Batch #48)
+        shp_ais = db.query(Shipment).filter(Shipment.shipment_code == "SHIP-VAX-2026-094").first()
+        if not shp_ais:
+            shp_ais = Shipment(
+                shipment_code="SHIP-VAX-2026-094",
+                package_id="PKG-mRNA-427",
+                company_id=company.id,
+                product_name="mRNA-427 Lyophilized Vaccine Batch #48",
+                batch_number="LOT-2026-mRNA427-B48",
+                customer_name="Charité University Hospital - Berlin Depot",
+                origin="Dock Bay 4 - Virtual Warehouse, Basel",
+                destination="Berlin Central Hospital, Germany",
+                temp_limit=8.0,
+                temp_safe_min=2.0,
+                forecast_horizon_minutes=15,
+                status=ShipmentStatus.NORMAL,
+                risk_level=RiskLevel.LOW.value,
+                ble_device_id=probe_ais.id,
+                tray_id=tray_ais.id
+            )
+            db.add(shp_ais)
+            db.commit()
+            db.refresh(shp_ais)
+
+        # 10. Ensure baseline telemetry readings for shipment 1 & AI Studio shipment
+        for s_target, dev_target, gw_target in [
+            (shp1, ble_dev, gateway),
+            (shp_ais, probe_ais, gw_ais)
+        ]:
+            readings_count = db.query(TemperatureReading).filter(TemperatureReading.shipment_id == s_target.id).count()
+            now = datetime.utcnow()
+            if readings_count < 3:
+                baseline_temps = [5.12, 5.18, 5.25, 5.31, 5.38]
                 for i, t in enumerate(baseline_temps):
                     db.add(TemperatureReading(
-                        shipment_id=shipment.id,
-                        device_id=ble_dev.id,
+                        shipment_id=s_target.id,
+                        device_id=dev_target.id,
+                        gateway_id=gw_target.id,
                         temperature=t,
                         battery=98.5,
                         humidity=42.0,
-                        signal_rssi=-64,
-                        timestamp=now - timedelta(minutes=(len(baseline_temps) - i) * 2)
+                        signal_rssi=-62,
+                        data_source="SIMULATED",
+                        validation_status="VALID",
+                        timestamp=now - timedelta(seconds=(len(baseline_temps) - i) * 10),
+                        server_timestamp=now
                     ))
                 db.commit()
 
-                # Compute initial forecast
-                forecast_data = AITemperatureForecaster.forecast_shipment_temperature(db, shipment)
+                forecast_data = AITemperatureForecaster.forecast_shipment_temperature(db, s_target)
                 if forecast_data:
                     db.add(TemperatureForecast(
-                        shipment_id=shipment.id,
+                        shipment_id=s_target.id,
                         current_temp=forecast_data["current_temp"],
                         predicted_temp=forecast_data["predicted_temp"],
                         horizon_minutes=forecast_data["horizon_minutes"],
@@ -222,52 +335,8 @@ def seed_database(include_samples: bool = False):
                         model_type=forecast_data["model_type"],
                         timestamp=now
                     ))
+                    s_target.risk_level = forecast_data["risk_level"]
                     db.commit()
-
-                # Seed system audit entry
-                db.add(AuditLog(
-                    user_email="system@pharmaprotect.io",
-                    action="SYSTEM_INITIALIZATION",
-                    resource_type="SYSTEM",
-                    resource_id="INITIAL_SEED",
-                    details="Initialized BioPharma cold-chain monitoring with demo shipment SHP-2026-001",
-                    timestamp=datetime.utcnow()
-                ))
-                db.commit()
-
-            # Seed additional shipment if needed
-            s2 = db.query(Shipment).filter(Shipment.shipment_code == "SHP-2026-002").first()
-            if not s2:
-                s2 = Shipment(
-                    shipment_code="SHP-2026-002",
-                    package_id="PKG-INS-441",
-                    company_id=company.id,
-                    product_name="Recombinant Human Insulin (Glargine)",
-                    batch_number="LOT-2026-3312",
-                    customer_name="Roche Diagnostics",
-                    origin="Frankfurt Cold Facility",
-                    destination="Zurich Pharmacy Hub",
-                    temp_limit=8.0,
-                    temp_safe_min=2.0,
-                    forecast_horizon_minutes=15,
-                    status=ShipmentStatus.NORMAL,
-                    risk_level="LOW",
-                    ble_device_id=ble_dev.id,
-                    tray_id=tray.id
-                )
-                db.add(s2)
-                db.commit()
-                db.refresh(s2)
-                db.add(TemperatureReading(
-                    shipment_id=s2.id,
-                    device_id=ble_dev.id,
-                    temperature=4.8,
-                    battery=96.0,
-                    humidity=40.0,
-                    signal_rssi=-62,
-                    timestamp=datetime.utcnow()
-                ))
-                db.commit()
 
         logger.info("Database seeding successfully verified.")
     except Exception as e:

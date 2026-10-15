@@ -43,6 +43,7 @@ def execute_simulation_step_sync(shipment_id: int, db: Session, force_excursion:
     sim_data = temp_sim.step(tray_state=tray_sim.state, force_excursion=force_excursion)
 
     # Ingest reading to DB
+    now = datetime.utcnow()
     reading = TemperatureReading(
         shipment_id=shipment.id,
         device_id=shipment.ble_device_id,
@@ -50,7 +51,10 @@ def execute_simulation_step_sync(shipment_id: int, db: Session, force_excursion:
         battery=sim_data["battery"],
         humidity=sim_data["humidity"],
         signal_rssi=sim_data["signal_rssi"],
-        timestamp=datetime.utcnow()
+        data_source="SIMULATED",
+        validation_status="SIMULATED",
+        timestamp=now,
+        server_timestamp=now
     )
     db.add(reading)
     db.commit()
@@ -97,6 +101,8 @@ def execute_simulation_step_sync(shipment_id: int, db: Session, force_excursion:
         "risk_level": shipment.risk_level,
         "status": shipment.status.value if hasattr(shipment.status, 'value') else str(shipment.status),
         "step_count": sim_data["step_count"],
+        "data_source": "SIMULATED",
+        "validation_status": "SIMULATED",
         "timestamp": reading.timestamp.isoformat()
     }
 
@@ -177,7 +183,10 @@ async def reset_simulation(shipment_id: int, db: Session = Depends(get_db)):
             battery=98.5,
             humidity=42.0,
             signal_rssi=-64,
-            timestamp=now - dt.timedelta(seconds=(len(baseline_temps) - i) * 10)
+            data_source="SIMULATED",
+            validation_status="SIMULATED",
+            timestamp=now - dt.timedelta(seconds=(len(baseline_temps) - i) * 10),
+            server_timestamp=now
         ))
     db.commit()
 

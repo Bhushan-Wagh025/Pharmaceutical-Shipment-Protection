@@ -1,6 +1,10 @@
 import os
+from pathlib import Path
 from typing import List
 from pydantic_settings import BaseSettings
+
+_ROOT_DIR = Path(__file__).resolve().parent.parent.parent
+_SQLITE_PATH = (_ROOT_DIR / "pharma_protection.db").as_posix()
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "B2B Pharmaceutical Shipment Protection AIoT System"
@@ -12,7 +16,7 @@ class Settings(BaseSettings):
         "DATABASE_URL", 
         "postgresql://postgres:postgres@localhost:5432/pharma_protection"
     )
-    SQLITE_FALLBACK_URL: str = "sqlite:///./pharma_protection.db"
+    SQLITE_FALLBACK_URL: str = os.getenv("SQLITE_FALLBACK_URL", f"sqlite:///{_SQLITE_PATH}")
     ENABLE_SQLITE_FALLBACK: bool = True
     
     # JWT & Auth

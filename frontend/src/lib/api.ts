@@ -1,6 +1,14 @@
-const API_BASE_URL = typeof window !== 'undefined' 
-  ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1')
-  : 'http://127.0.0.1:8000/api/v1';
+export function getApiBaseUrl(): string {
+  if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL;
+  if (typeof window !== 'undefined') {
+    const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
+    const host = window.location.hostname || 'localhost';
+    return `${protocol}//${host}:8000/api/v1`;
+  }
+  return 'http://127.0.0.1:8000/api/v1';
+}
+
+const API_BASE_URL = getApiBaseUrl();
 
 export interface Gateway {
   id: number;
@@ -55,7 +63,7 @@ async function fetchWithAuth(endpoint: string, options: RequestInit = {}) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const url = `${API_BASE_URL}${endpoint}`;
+  const url = `${getApiBaseUrl()}${endpoint}`;
   const response = await fetch(url, { ...options, headers });
   
   if (!response.ok) {

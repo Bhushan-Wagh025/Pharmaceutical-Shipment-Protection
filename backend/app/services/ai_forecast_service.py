@@ -38,9 +38,18 @@ class AITemperatureForecaster:
         )
 
         if not readings or len(readings) < 3:
-            # Mathematical forecasting requires at least 3 historical readings for valid trajectory calculation.
-            # Never fabricate predictions or confidence scores when insufficient real readings exist.
-            return None
+            # Fallback to the latest historical readings for cold start / demo scenarios
+            recent_readings = (
+                db.query(TemperatureReading)
+                .filter(TemperatureReading.shipment_id == shipment.id)
+                .order_by(TemperatureReading.timestamp.desc())
+                .limit(20)
+                .all()
+            )
+            if len(recent_readings) >= 3:
+                readings = list(reversed(recent_readings))
+            else:
+                return None
 
         # Convert timestamps and temperatures to numpy arrays
         t0 = readings[0].timestamp
