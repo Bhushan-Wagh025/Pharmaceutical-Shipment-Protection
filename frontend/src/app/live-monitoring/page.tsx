@@ -246,12 +246,12 @@ export default function LiveMonitoringPage() {
       // Records from Aperture history (chronological order)
       for (const entry of [...records].reverse()) {
         const objs = entry?.data?.obj || [];
-        const match = beaconMac 
+        const match = beaconMac
           ? objs.find((o: any) => o.dmac === beaconMac && typeof o.temp === 'number')
           : objs.find((o: any) => typeof o.temp === 'number');
         if (match) {
-          const timeStr = entry.received_at 
-            ? new Date(entry.received_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
+          const timeStr = entry.received_at
+            ? new Date(entry.received_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
             : '--';
           pts.push({
             time: timeStr,
@@ -305,7 +305,7 @@ export default function LiveMonitoringPage() {
         if (!isMounted) return;
         if (Array.isArray(data) && data.length > 0) {
           setShipments(data);
-          const matchShp = initialBeacon 
+          const matchShp = initialBeacon
             ? data.find((s: any) => s.ble_device?.device_mac === initialBeacon || s.shipment_code.includes(initialBeacon))
             : data[0];
           const targetId = matchShp ? matchShp.id : data[0].id;
@@ -405,7 +405,7 @@ export default function LiveMonitoringPage() {
               humidity: 45.0,
               data_source: 'LIVE',
               timestamp: new Date().toISOString(),
-            }).catch(() => {});
+            }).catch(() => { });
           }
         }
       } catch (err: any) {
@@ -646,8 +646,8 @@ export default function LiveMonitoringPage() {
     setEvents((prev) => [excursionEvent, ...prev.slice(0, 7)]);
 
     try {
-      api.simulatorTriggerExcursion(1).catch(() => {});
-    } catch {}
+      api.simulatorTriggerExcursion(1).catch(() => { });
+    } catch { }
 
     if (isAutonomous && !isEmergencyStopped) {
       setTimeout(() => {
@@ -729,12 +729,12 @@ export default function LiveMonitoringPage() {
       setActiveStep(2);
       setActiveHwStage('BEACON');
       setAiDecision('Extended in Ambient');
-      api.moveTrayOut(1).catch(() => {});
+      api.moveTrayOut(1).catch(() => { });
     } else {
       setActiveStep(3);
       setActiveHwStage('ESP32');
       setAiDecision('Moving to Cooling');
-      api.moveTrayIn(1).catch(() => {});
+      api.moveTrayIn(1).catch(() => { });
     }
   };
 
@@ -758,7 +758,7 @@ export default function LiveMonitoringPage() {
 
     try {
       await api.emergencyStopTray(1);
-    } catch {}
+    } catch { }
   };
 
   // Manual Operator Override
@@ -778,7 +778,7 @@ export default function LiveMonitoringPage() {
 
     try {
       await api.overrideTray(1, target, 'Operator manual live command override');
-    } catch {}
+    } catch { }
   };
 
   const getPackageLocation = () => {
@@ -879,11 +879,10 @@ export default function LiveMonitoringPage() {
                 ● NOT CONFIGURED
               </span>
             ) : (
-              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                selectedGateway?.status === 'ONLINE' || selectedGateway?.status === 'CONNECTED'
+              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase ${selectedGateway?.status === 'ONLINE' || selectedGateway?.status === 'CONNECTED'
                   ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
                   : 'bg-amber-100 text-amber-800 border border-amber-200'
-              }`}>
+                }`}>
                 ● {selectedGateway?.status || 'NOT CONFIGURED'}
               </span>
             )}
@@ -901,11 +900,10 @@ export default function LiveMonitoringPage() {
         {/* Right: Realtime status, Emergency Stop, Settings Link */}
         <div className="flex flex-wrap items-center gap-2.5">
           {/* WebSocket status pill */}
-          <div className={`px-2.5 py-1 rounded-lg text-xs font-mono font-semibold flex items-center gap-1.5 border ${
-            isWsConnected
+          <div className={`px-2.5 py-1 rounded-lg text-xs font-mono font-semibold flex items-center gap-1.5 border ${isWsConnected
               ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
               : 'bg-amber-50 text-amber-700 border-amber-200'
-          }`}>
+            }`}>
             <span className={`w-2 h-2 rounded-full ${isWsConnected ? 'bg-emerald-500 animate-ping' : 'bg-amber-500'}`}></span>
             <span>{isWsConnected ? 'WS LIVE' : 'WS RECONNECTING'}</span>
           </div>
@@ -913,11 +911,10 @@ export default function LiveMonitoringPage() {
           {/* Hardware Emergency Stop */}
           <button
             onClick={handleEmergencyStop}
-            className={`px-3 py-1.5 rounded-xl text-xs font-extrabold flex items-center gap-1.5 border transition-all active:scale-95 shadow-xs ${
-              isEmergencyStopped
+            className={`px-3 py-1.5 rounded-xl text-xs font-extrabold flex items-center gap-1.5 border transition-all active:scale-95 shadow-xs ${isEmergencyStopped
                 ? 'bg-red-700 text-white border-red-800 animate-pulse'
                 : 'bg-red-50 hover:bg-red-100 text-red-700 border-red-300'
-            }`}
+              }`}
             title="Actuator Emergency Stop Interlock"
           >
             <AlertOctagon className="w-3.5 h-3.5 fill-red-600 text-white" />
@@ -1006,14 +1003,12 @@ export default function LiveMonitoringPage() {
       {/* ========================================================================= */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         {/* Card 1: Package Temperature */}
-        <div className={`bg-white rounded-xl p-4 border transition-all duration-300 shadow-xs hover:shadow-sm ${
-          isBreached ? 'border-red-300 ring-2 ring-red-100 bg-red-50/20' : 'border-slate-200/90'
-        }`}>
+        <div className={`bg-white rounded-xl p-4 border transition-all duration-300 shadow-xs hover:shadow-sm ${isBreached ? 'border-red-300 ring-2 ring-red-100 bg-red-50/20' : 'border-slate-200/90'
+          }`}>
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2.5">
-              <div className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors ${
-                isBreached ? 'bg-red-100 text-red-600' : 'bg-blue-50 text-blue-600'
-              }`}>
+              <div className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors ${isBreached ? 'bg-red-100 text-red-600' : 'bg-blue-50 text-blue-600'
+                }`}>
                 <Thermometer className="w-5 h-5 stroke-[2.2]" />
               </div>
               <div>
@@ -1031,9 +1026,8 @@ export default function LiveMonitoringPage() {
               </span>
             )}
           </div>
-          <div className={`text-3xl font-extrabold tracking-tight pl-1 font-mono transition-colors ${
-            isBreached ? 'text-red-600' : 'text-slate-900'
-          }`}>
+          <div className={`text-3xl font-extrabold tracking-tight pl-1 font-mono transition-colors ${isBreached ? 'text-red-600' : 'text-slate-900'
+            }`}>
             {packageTemp !== null ? packageTemp.toFixed(1) : '--'} <span className="text-lg font-normal text-slate-500">°C</span>
           </div>
           <div className="flex items-center justify-between mt-2 pl-1 text-[11px]">
@@ -1056,13 +1050,12 @@ export default function LiveMonitoringPage() {
                 <div className="text-[10px] text-slate-400 font-mono">Ridge Regr. v1.2</div>
               </div>
             </div>
-            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-              riskLevel === 'CRITICAL'
+            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${riskLevel === 'CRITICAL'
                 ? 'bg-red-100 text-red-700 animate-pulse'
                 : riskLevel === 'ELEVATED'
-                ? 'bg-amber-100 text-amber-800'
-                : 'bg-emerald-100 text-emerald-800'
-            }`}>
+                  ? 'bg-amber-100 text-amber-800'
+                  : 'bg-emerald-100 text-emerald-800'
+              }`}>
               {riskLevel}
             </span>
           </div>
@@ -1104,15 +1097,14 @@ export default function LiveMonitoringPage() {
               </div>
               <div className="text-xs font-semibold text-slate-600">Tray Actuator State</div>
             </div>
-            <span className={`font-mono text-[10px] font-extrabold px-1.5 py-0.5 rounded ${
-              trayState === 'PROTECTED'
+            <span className={`font-mono text-[10px] font-extrabold px-1.5 py-0.5 rounded ${trayState === 'PROTECTED'
                 ? 'bg-cyan-100 text-cyan-800'
                 : trayState === 'EXTENDED'
-                ? 'bg-amber-100 text-amber-800'
-                : trayState === 'ERROR'
-                ? 'bg-red-100 text-red-800'
-                : 'bg-blue-100 text-blue-800'
-            }`}>
+                  ? 'bg-amber-100 text-amber-800'
+                  : trayState === 'ERROR'
+                    ? 'bg-red-100 text-red-800'
+                    : 'bg-blue-100 text-blue-800'
+              }`}>
               {trayState}
             </span>
           </div>
@@ -1232,9 +1224,8 @@ export default function LiveMonitoringPage() {
                     <button
                       key={s}
                       onClick={() => setSimSpeed(s)}
-                      className={`px-2 py-1 rounded-md transition-all ${
-                        simSpeed === s ? 'bg-white text-blue-700 shadow-2xs font-bold' : 'text-slate-500 hover:text-slate-800'
-                      }`}
+                      className={`px-2 py-1 rounded-md transition-all ${simSpeed === s ? 'bg-white text-blue-700 shadow-2xs font-bold' : 'text-slate-500 hover:text-slate-800'
+                        }`}
                     >
                       {s}x
                     </button>
@@ -1244,9 +1235,8 @@ export default function LiveMonitoringPage() {
                 {/* Sound Toggle */}
                 <button
                   onClick={() => setSoundEnabled(!soundEnabled)}
-                  className={`p-2 rounded-lg border text-xs transition-colors ${
-                    soundEnabled ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-slate-50 text-slate-400 border-slate-200'
-                  }`}
+                  className={`p-2 rounded-lg border text-xs transition-colors ${soundEnabled ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-slate-50 text-slate-400 border-slate-200'
+                    }`}
                   title={soundEnabled ? 'Mute Audio Feedback' : 'Enable Hardware Audio Feedback'}
                 >
                   {soundEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
@@ -1282,9 +1272,8 @@ export default function LiveMonitoringPage() {
                 {/* Live / Paused */}
                 <button
                   onClick={() => setIsPlaying(!isPlaying)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold text-white flex items-center gap-1.5 shadow-xs transition-colors active:scale-95 ${
-                    isPlaying ? 'bg-blue-600 hover:bg-blue-700' : 'bg-slate-700 hover:bg-slate-800'
-                  }`}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold text-white flex items-center gap-1.5 shadow-xs transition-colors active:scale-95 ${isPlaying ? 'bg-blue-600 hover:bg-blue-700' : 'bg-slate-700 hover:bg-slate-800'
+                    }`}
                 >
                   {isPlaying ? <Pause className="w-3 h-3 fill-white" /> : <Play className="w-3 h-3 fill-white" />}
                   <span>{isPlaying ? 'Live' : 'Paused'}</span>
@@ -1323,9 +1312,8 @@ export default function LiveMonitoringPage() {
                   <div className="w-[58%] h-full flex flex-col justify-between relative pr-4">
                     {/* Stepper Motor On Left */}
                     <div className="absolute left-0 top-1/2 -translate-y-1/2 w-8 h-20 bg-slate-700 rounded-lg border border-slate-600 flex flex-col items-center justify-center shadow-lg">
-                      <div className={`w-4 h-4 rounded-full border-2 border-slate-400 flex items-center justify-center ${
-                        isTrayMoving ? 'animate-spin' : ''
-                      }`}>
+                      <div className={`w-4 h-4 rounded-full border-2 border-slate-400 flex items-center justify-center ${isTrayMoving ? 'animate-spin' : ''
+                        }`}>
                         <div className="w-1.5 h-1.5 bg-amber-400 rounded-full"></div>
                       </div>
                       <span className="text-[7px] text-slate-400 font-mono mt-1 font-bold">SERVO</span>
@@ -1398,11 +1386,10 @@ export default function LiveMonitoringPage() {
                     <div className="relative">
                       {/* Floating Pointer: "WHERE IS THE PACKAGE" */}
                       <div className="absolute -top-14 left-1/2 -translate-x-1/2 whitespace-nowrap">
-                        <div className={`px-2.5 py-1 rounded-md text-[10px] font-bold flex items-center gap-1.5 shadow-xl border backdrop-blur-md transition-all ${
-                          isBreached
+                        <div className={`px-2.5 py-1 rounded-md text-[10px] font-bold flex items-center gap-1.5 shadow-xl border backdrop-blur-md transition-all ${isBreached
                             ? 'bg-red-950/95 text-red-200 border-red-500 ring-2 ring-red-400/50 animate-bounce'
                             : 'bg-slate-900/95 text-cyan-300 border-cyan-500/60'
-                        }`}>
+                          }`}>
                           <MapPin className="w-3 h-3 text-red-400" />
                           <span>PACKAGE HERE: <strong className="font-mono text-white text-xs">{packageTemp !== null ? `${packageTemp.toFixed(1)}°C` : '--'}</strong></span>
                         </div>
@@ -1448,13 +1435,12 @@ export default function LiveMonitoringPage() {
               {/* Status Bar */}
               <div className="relative z-10 flex flex-wrap items-center justify-between gap-2 text-xs pt-2 border-t border-slate-800">
                 <div className="flex items-center gap-2">
-                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold font-mono ${
-                    trayPosition >= 90
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold font-mono ${trayPosition >= 90
                       ? 'bg-cyan-950 text-cyan-300 border border-cyan-800'
                       : isTrayMoving
-                      ? 'bg-amber-950 text-amber-300 border border-amber-800 animate-pulse'
-                      : 'bg-slate-800 text-slate-300 border border-slate-700'
-                  }`}>
+                        ? 'bg-amber-950 text-amber-300 border border-amber-800 animate-pulse'
+                        : 'bg-slate-800 text-slate-300 border border-slate-700'
+                    }`}>
                     STATE: {trayState}
                   </span>
                   <span className="text-[11px] text-slate-400">
@@ -1485,9 +1471,8 @@ export default function LiveMonitoringPage() {
           <div className="pt-3 border-t border-slate-100">
             <div className="grid grid-cols-5 text-center relative">
               <div className="flex flex-col items-center">
-                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
-                  activeStep >= 1 ? 'bg-emerald-500 text-white shadow-xs' : 'bg-slate-200 text-slate-600'
-                }`}>
+                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${activeStep >= 1 ? 'bg-emerald-500 text-white shadow-xs' : 'bg-slate-200 text-slate-600'
+                  }`}>
                   <CheckCircle2 className="w-4 h-4" />
                 </div>
                 <span className="text-[11px] font-semibold text-slate-800 mt-1.5 leading-tight">Package Detected</span>
@@ -1495,9 +1480,8 @@ export default function LiveMonitoringPage() {
               </div>
 
               <div className="flex flex-col items-center">
-                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
-                  activeStep >= 2 ? 'bg-emerald-500 text-white shadow-xs' : 'bg-slate-200 text-slate-600'
-                }`}>
+                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${activeStep >= 2 ? 'bg-emerald-500 text-white shadow-xs' : 'bg-slate-200 text-slate-600'
+                  }`}>
                   <CheckCircle2 className="w-4 h-4" />
                 </div>
                 <span className="text-[11px] font-semibold text-slate-800 mt-1.5 leading-tight">Monitoring Temperature</span>
@@ -1505,9 +1489,8 @@ export default function LiveMonitoringPage() {
               </div>
 
               <div className="flex flex-col items-center">
-                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ring-4 ring-blue-100 transition-all ${
-                  activeStep >= 3 ? 'bg-blue-600 text-white shadow-xs' : 'bg-slate-200 text-slate-600'
-                }`}>
+                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ring-4 ring-blue-100 transition-all ${activeStep >= 3 ? 'bg-blue-600 text-white shadow-xs' : 'bg-slate-200 text-slate-600'
+                  }`}>
                   <Snowflake className="w-4 h-4" />
                 </div>
                 <span className="text-[11px] font-bold text-blue-700 mt-1.5 leading-tight">Moved to Cooling</span>
@@ -1515,9 +1498,8 @@ export default function LiveMonitoringPage() {
               </div>
 
               <div className="flex flex-col items-center">
-                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
-                  activeStep >= 4 ? 'bg-blue-600 text-white shadow-xs' : 'bg-slate-100 text-slate-400 border border-slate-300'
-                }`}>
+                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${activeStep >= 4 ? 'bg-blue-600 text-white shadow-xs' : 'bg-slate-100 text-slate-400 border border-slate-300'
+                  }`}>
                   <Snowflake className="w-3.5 h-3.5" />
                 </div>
                 <span className="text-[11px] font-semibold text-slate-600 mt-1.5 leading-tight">Cooling in Progress</span>
@@ -1525,9 +1507,8 @@ export default function LiveMonitoringPage() {
               </div>
 
               <div className="flex flex-col items-center">
-                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
-                  activeStep >= 5 ? 'bg-emerald-500 text-white shadow-xs' : 'bg-slate-100 text-slate-400 border border-slate-300'
-                }`}>
+                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${activeStep >= 5 ? 'bg-emerald-500 text-white shadow-xs' : 'bg-slate-100 text-slate-400 border border-slate-300'
+                  }`}>
                   <CheckCircle2 className="w-4 h-4" />
                 </div>
                 <span className="text-[11px] font-semibold text-slate-600 mt-1.5 leading-tight">Stable Temperature</span>
@@ -1654,11 +1635,10 @@ export default function LiveMonitoringPage() {
                 </div>
                 <button
                   onClick={() => setIsAutonomous(!isAutonomous)}
-                  className={`text-[11px] font-bold px-2 py-0.5 rounded border transition-colors ${
-                    isAutonomous
+                  className={`text-[11px] font-bold px-2 py-0.5 rounded border transition-colors ${isAutonomous
                       ? 'bg-blue-50 text-blue-700 border-blue-200'
                       : 'bg-slate-50 text-slate-600 border-slate-200'
-                  }`}
+                    }`}
                   title="Toggle Autonomous Decision Actuation"
                 >
                   {isAutonomous ? '🤖 Auto-Pilot ON' : '🎮 Manual Override'}
@@ -1670,17 +1650,15 @@ export default function LiveMonitoringPage() {
                 <div className="col-span-6 space-y-2">
                   <div>
                     <div className="text-[11px] font-semibold text-slate-500">Current Temp</div>
-                    <div className={`text-xl font-bold font-mono transition-colors ${
-                      packageTemp && packageTemp > tempMaxLimit ? 'text-red-600' : 'text-slate-900'
-                    }`}>
+                    <div className={`text-xl font-bold font-mono transition-colors ${packageTemp && packageTemp > tempMaxLimit ? 'text-red-600' : 'text-slate-900'
+                      }`}>
                       {packageTemp !== null ? `${packageTemp.toFixed(2)} °C` : '--'}
                     </div>
                   </div>
                   <div>
                     <div className="text-[11px] font-semibold text-slate-500">Predicted ({forecastHorizon})</div>
-                    <div className={`text-xl font-black font-mono transition-colors ${
-                      predictedTemp && predictedTemp >= tempMaxLimit ? 'text-red-600 animate-pulse' : 'text-emerald-600'
-                    }`}>
+                    <div className={`text-xl font-black font-mono transition-colors ${predictedTemp && predictedTemp >= tempMaxLimit ? 'text-red-600 animate-pulse' : 'text-emerald-600'
+                      }`}>
                       {predictedTemp !== null ? `${predictedTemp.toFixed(1)} °C` : '--'}
                     </div>
                   </div>
@@ -1691,19 +1669,16 @@ export default function LiveMonitoringPage() {
                 </div>
 
                 {/* Decision box */}
-                <div className={`col-span-6 border rounded-xl p-3.5 text-center flex flex-col items-center justify-center shadow-xs transition-all ${
-                  isBreached
+                <div className={`col-span-6 border rounded-xl p-3.5 text-center flex flex-col items-center justify-center shadow-xs transition-all ${isBreached
                     ? 'bg-red-50 border-red-300 ring-2 ring-red-200'
                     : 'bg-emerald-50/80 border-emerald-200'
-                }`}>
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center mb-1.5 shadow-xs text-white ${
-                    isBreached ? 'bg-red-600 animate-bounce' : 'bg-emerald-500'
                   }`}>
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center mb-1.5 shadow-xs text-white ${isBreached ? 'bg-red-600 animate-bounce' : 'bg-emerald-500'
+                    }`}>
                     {isBreached ? <AlertTriangle className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />}
                   </div>
-                  <div className={`text-[10px] font-bold uppercase tracking-wider ${
-                    isBreached ? 'text-red-800' : 'text-emerald-800'
-                  }`}>
+                  <div className={`text-[10px] font-bold uppercase tracking-wider ${isBreached ? 'text-red-800' : 'text-emerald-800'
+                    }`}>
                     Decision
                   </div>
                   <div className="text-xs font-black text-slate-900 mt-0.5 leading-tight">
@@ -1748,12 +1723,11 @@ export default function LiveMonitoringPage() {
             {/* 1. Beacon on Package */}
             <div className="py-2 flex items-center justify-between">
               <div>
-                <span className="font-bold text-slate-800 block">KKM K6 Beacon (On Package)</span>
+                <span className="font-bold text-slate-800 block">Aperture Industrial Beacon</span>
                 <span className="text-[10px] text-slate-400 font-mono">BLE 5.0 Advert | Batt: {batteryPct}%</span>
               </div>
-              <span className={`text-[11px] font-mono font-bold px-2 py-0.5 rounded ${
-                activeHwStage === 'BEACON' ? 'bg-blue-100 text-blue-800 animate-pulse' : 'text-emerald-700 bg-emerald-50'
-              }`}>
+              <span className={`text-[11px] font-mono font-bold px-2 py-0.5 rounded ${activeHwStage === 'BEACON' ? 'bg-blue-100 text-blue-800 animate-pulse' : 'text-emerald-700 bg-emerald-50'
+                }`}>
                 {activeHwStage === 'BEACON' ? '● BROADCASTING' : `ONLINE (${rssiDbm}dBm)`}
               </span>
             </div>
@@ -1764,9 +1738,8 @@ export default function LiveMonitoringPage() {
                 <span className="font-bold text-slate-800 block">GAO 217030 BLE Gateway</span>
                 <span className="text-[10px] text-slate-400 font-mono">MQTT Broker Bridge | 1883</span>
               </div>
-              <span className={`text-[11px] font-mono font-bold px-2 py-0.5 rounded ${
-                activeHwStage === 'GATEWAY' ? 'bg-blue-100 text-blue-800 animate-pulse' : 'text-emerald-700 bg-emerald-50'
-              }`}>
+              <span className={`text-[11px] font-mono font-bold px-2 py-0.5 rounded ${activeHwStage === 'GATEWAY' ? 'bg-blue-100 text-blue-800 animate-pulse' : 'text-emerald-700 bg-emerald-50'
+                }`}>
                 {activeHwStage === 'GATEWAY' ? '● FORWARDING MQTT' : 'CONNECTED'}
               </span>
             </div>
@@ -1777,9 +1750,8 @@ export default function LiveMonitoringPage() {
                 <span className="font-bold text-slate-800 block">Laptop / Mini PC (AI Engine)</span>
                 <span className="text-[10px] text-slate-400 font-mono">Data Processing + Decision Logic</span>
               </div>
-              <span className={`text-[11px] font-mono font-bold px-2 py-0.5 rounded ${
-                activeHwStage === 'LAPTOP_AI' ? 'bg-purple-100 text-purple-800 animate-pulse' : 'text-slate-700 bg-slate-100'
-              }`}>
+              <span className={`text-[11px] font-mono font-bold px-2 py-0.5 rounded ${activeHwStage === 'LAPTOP_AI' ? 'bg-purple-100 text-purple-800 animate-pulse' : 'text-slate-700 bg-slate-100'
+                }`}>
                 {activeHwStage === 'LAPTOP_AI' ? '● AI INFERENCE ACTIVE' : 'HOST RUNNING'}
               </span>
             </div>
@@ -1790,9 +1762,8 @@ export default function LiveMonitoringPage() {
                 <span className="font-bold text-slate-800 block">ESP32 Actuator Controller</span>
                 <span className="text-[10px] text-slate-400 font-mono">USB Serial UART (115200 baud)</span>
               </div>
-              <span className={`text-[11px] font-mono font-bold px-2 py-0.5 rounded ${
-                activeHwStage === 'ESP32' ? 'bg-amber-100 text-amber-800 animate-pulse' : 'text-emerald-700 bg-emerald-50'
-              }`}>
+              <span className={`text-[11px] font-mono font-bold px-2 py-0.5 rounded ${activeHwStage === 'ESP32' ? 'bg-amber-100 text-amber-800 animate-pulse' : 'text-emerald-700 bg-emerald-50'
+                }`}>
                 {activeHwStage === 'ESP32' ? '● EXECUTING MOTOR CMD' : 'UART READY'}
               </span>
             </div>
@@ -1803,9 +1774,8 @@ export default function LiveMonitoringPage() {
                 <span className="font-bold text-slate-800 block">Servo Actuator Motor</span>
                 <span className="text-[10px] text-slate-400 font-mono">PWM Pin 18 | {motorCurrentMa} mA</span>
               </div>
-              <span className={`text-[11px] font-mono font-bold px-2 py-0.5 rounded ${
-                isTrayMoving ? 'bg-amber-100 text-amber-800 animate-pulse' : 'text-slate-700 bg-slate-100'
-              }`}>
+              <span className={`text-[11px] font-mono font-bold px-2 py-0.5 rounded ${isTrayMoving ? 'bg-amber-100 text-amber-800 animate-pulse' : 'text-slate-700 bg-slate-100'
+                }`}>
                 {isTrayMoving ? '● ROTATING (650mA)' : 'HOLDING (180mA)'}
               </span>
             </div>
@@ -1866,17 +1836,16 @@ export default function LiveMonitoringPage() {
                     ev.type === 'red'
                       ? 'bg-red-600 animate-ping'
                       : ev.type === 'blue'
-                      ? 'bg-blue-600'
-                      : ev.type === 'amber'
-                      ? 'bg-amber-500'
-                      : 'bg-emerald-500';
+                        ? 'bg-blue-600'
+                        : ev.type === 'amber'
+                          ? 'bg-amber-500'
+                          : 'bg-emerald-500';
 
                   return (
                     <div
                       key={ev.id}
-                      className={`flex items-start gap-2.5 text-xs p-1.5 rounded transition-colors ${
-                        ev.isNew ? 'bg-blue-50/70 border border-blue-200' : ''
-                      }`}
+                      className={`flex items-start gap-2.5 text-xs p-1.5 rounded transition-colors ${ev.isNew ? 'bg-blue-50/70 border border-blue-200' : ''
+                        }`}
                     >
                       <span className="font-mono text-slate-400 text-[11px] shrink-0 w-13">
                         {ev.time}
